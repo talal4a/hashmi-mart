@@ -1,3 +1,5 @@
+/** Horizontal page gutter every home section aligns to. */
+export const HOME_GUTTER = 18;
 export const grocery = {
   ink: '#0B1F2A',
   muted: '#718596',
