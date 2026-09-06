@@ -15,7 +15,6 @@ import {
   Image,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -29,20 +28,13 @@ import {
   Bell,
   Bot,
   ChevronRight,
-  Heart,
   Leaf,
   Mic,
-  Plus,
   Search,
   ShoppingCart,
-  Star,
 } from 'lucide-react-native';
-import { useEffect, useState, type PropsWithChildren } from 'react';
-import {
-  nearbyVendors,
-  quickActions,
-  freshPicks,
-} from '../../data/groceryHome';
+import { useEffect, useState } from 'react';
+import { quickActions } from '../../data/groceryHome';
 import { grocery as c, softShadow } from './groceryTheme';
 
 export function HomeHeader() {
@@ -301,43 +293,6 @@ export function VoiceOrderCard() {
     </LinearGradient>
   );
 }
-export function HomeRail({ children }: PropsWithChildren) {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={s.rail}
-    >
-      {children}
-    </ScrollView>
-  );
-}
-/** Each product uses one cell of the locally bundled photographic contact sheet. */
-export function ProduceArt({ index, size }: { index: number; size: number }) {
-  return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        overflow: 'hidden',
-        borderRadius: 16,
-      }}
-    >
-      <Image
-        source={require('../../assets/images/home/produce-sheet.png')}
-        accessibilityIgnoresInvertColors
-        style={{
-          position: 'absolute',
-          width: size * 3,
-          height: size * 2,
-          left: -(index % 3) * size,
-          top: -Math.floor(index / 3) * size,
-        }}
-        resizeMode="stretch"
-      />
-    </View>
-  );
-}
 export function HeroBanner() {
   const { width } = useWindowDimensions();
   const height = Math.max(205, (width - 36) / 3);
@@ -424,67 +379,6 @@ export function ActionTile({ item }: { item: (typeof quickActions)[number] }) {
           {item.detail}
         </Text>
       </View>
-    </View>
-  );
-}
-export function VendorCard({ item }: { item: (typeof nearbyVendors)[number] }) {
-  return (
-    <View style={s.vendor}>
-      <View style={[s.vendorLogo, { backgroundColor: item.color }]}>
-        <Leaf size={20} color="white" />
-        <Text style={s.vendorMark}>{item.mark}</Text>
-      </View>
-      <View style={{ flex: 1, gap: 4 }}>
-        <Text numberOfLines={1} style={s.quickTitle}>
-          {item.name}
-        </Text>
-        <View style={[s.row, { gap: 4 }]}>
-          <Star size={11} fill="#FFAD16" color="#FFAD16" />
-          <Text style={s.vendorMeta}>
-            {item.rating} · {item.time}
-          </Text>
-        </View>
-        <Text
-          style={[
-            s.vendorMeta,
-            { color: item.delivery === 'Free delivery' ? '#14A571' : c.muted },
-          ]}
-        >
-          {item.delivery}
-        </Text>
-      </View>
-    </View>
-  );
-}
-export function FreshProductCard({
-  item,
-  width = 156,
-}: {
-  item: (typeof freshPicks)[number];
-  width?: number;
-}) {
-  return (
-    <View style={[s.product, { width }]}>
-      <View style={s.productWell}>
-        <ProduceArt index={item.art} size={width - 16} />
-        {item.discount && (
-          <View style={s.productDiscount}>
-            <Text style={s.productDiscountText}>{item.discount}% OFF</Text>
-          </View>
-        )}
-        <View style={s.heart} accessibilityLabel={`Save ${item.name}`}>
-          <Heart size={19} color="#91A0B5" />
-        </View>
-        <View style={s.add} accessibilityLabel={`Add ${item.name}`}>
-          <Plus size={24} color="white" />
-        </View>
-      </View>
-      <Text style={s.productMeta}>{item.meta}</Text>
-      <Text numberOfLines={1} style={s.productName}>
-        {item.name}
-      </Text>
-      <Text style={s.price}>Rs. {item.price}</Text>
-      <Text style={s.was}>{item.was ? `Rs. ${item.was}` : ' '}</Text>
     </View>
   );
 }
@@ -665,7 +559,6 @@ const s = StyleSheet.create({
     textAlign: 'center',
     transform: [{ rotate: '-9deg' }],
   },
-  rail: { paddingHorizontal: 18, paddingVertical: 6, gap: 10 },
   banner: { borderRadius: 24, overflow: 'hidden', backgroundColor: '#EEF5DE' },
   bannerPhoto: {
     position: 'absolute',
@@ -777,87 +670,5 @@ const s = StyleSheet.create({
     color: '#425563',
     fontSize: 12,
     lineHeight: 17,
-  },
-  vendor: {
-    width: 185,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 10,
-    backgroundColor: 'white',
-    borderRadius: 19,
-    ...softShadow,
-  },
-  vendorLogo: {
-    width: 43,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  vendorMark: { color: 'white', fontSize: 9, fontWeight: '800' },
-  vendorMeta: { color: c.muted, fontSize: 10 },
-  quickTitle: { fontSize: 12, fontWeight: '600', color: c.ink },
-  product: {
-    padding: 8,
-    borderRadius: 21,
-    backgroundColor: 'white',
-    ...softShadow,
-  },
-  productWell: { borderRadius: 16, backgroundColor: c.pale, marginBottom: 9 },
-  productDiscount: {
-    position: 'absolute',
-    top: 5,
-    left: 5,
-    borderRadius: 15,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    backgroundColor: c.green,
-  },
-  productDiscountText: { fontSize: 10, fontWeight: '700', color: 'white' },
-  heart: {
-    position: 'absolute',
-    right: 3,
-    top: 2,
-    width: 30,
-    height: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  add: {
-    position: 'absolute',
-    right: -2,
-    bottom: -4,
-    width: 38,
-    height: 38,
-    borderRadius: 22,
-    backgroundColor: c.blue,
-    borderWidth: 3,
-    borderColor: 'white',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  productMeta: { fontSize: 10, color: c.muted, marginHorizontal: 3 },
-  productName: {
-    color: c.ink,
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 3,
-    marginHorizontal: 3,
-  },
-  price: {
-    color: c.ink,
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: 10,
-    marginHorizontal: 3,
-  },
-  was: {
-    color: '#8794A6',
-    fontSize: 11,
-    textDecorationLine: 'line-through',
-    marginTop: 3,
-    marginHorizontal: 3,
-    marginBottom: 3,
   },
 });

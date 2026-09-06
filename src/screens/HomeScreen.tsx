@@ -8,19 +8,21 @@ import { ScrollView, StatusBar, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SectionHeader from '../components/home/SectionHeader';
+import { Rail, RailItem, SectionReveal } from '../components/home/rail/Rail';
+import VendorCard, { VENDOR_CARD_WIDTH } from '../components/home/VendorCard';
+import FreshProductCard, {
+  PRODUCT_CARD_WIDTH,
+} from '../components/home/FreshProductCard';
 import {
   ActionGrid,
-  FreshProductCard,
   HeroBanner,
   HomeHeader,
-  HomeRail,
   HomeSearchBar,
-  VendorCard,
   VoiceOrderCard,
   WhatsAppButton,
 } from '../components/home/GroceryHome';
 import { freshPicks, nearbyVendors } from '../data/groceryHome';
-import { grocery } from '../components/home/groceryTheme';
+import { grocery, HOME_GUTTER } from '../components/home/groceryTheme';
 
 /** Reference-led, static Home mockup. Controls intentionally have no app actions. */
 export default function HomeScreen() {
@@ -53,22 +55,38 @@ export default function HomeScreen() {
             <SectionHeader title="What do you need today?" />
             <ActionGrid />
           </View>
-          <View style={s.section}>
-            <SectionHeader title="Popular Near You" actionLabel="See all" />
-            <HomeRail>
-              {nearbyVendors.map(item => (
-                <VendorCard key={item.name} item={item} />
-              ))}
-            </HomeRail>
-          </View>
-          <View style={s.section}>
-            <SectionHeader title="Today's fresh picks" actionLabel="See all" />
-            <HomeRail>
-              {freshPicks.map(item => (
-                <FreshProductCard key={item.id} item={item} />
-              ))}
-            </HomeRail>
-          </View>
+          <SectionReveal delay={60}>
+            <View style={s.section}>
+              <SectionHeader
+                title="Popular near you"
+                subtitle={`${nearbyVendors.length} stores delivering to your area`}
+                actionLabel="See all"
+              />
+              <Rail itemWidth={VENDOR_CARD_WIDTH} gap={12}>
+                {nearbyVendors.map((item, index) => (
+                  <RailItem key={item.id} index={index}>
+                    <VendorCard item={item} />
+                  </RailItem>
+                ))}
+              </Rail>
+            </View>
+          </SectionReveal>
+          <SectionReveal delay={140}>
+            <View style={s.section}>
+              <SectionHeader
+                title="Today's fresh picks"
+                subtitle="Picked this morning, priced for today"
+                actionLabel="See all"
+              />
+              <Rail itemWidth={PRODUCT_CARD_WIDTH} gap={12}>
+                {freshPicks.map((item, index) => (
+                  <RailItem key={item.id} index={index}>
+                    <FreshProductCard item={item} />
+                  </RailItem>
+                ))}
+              </Rail>
+            </View>
+          </SectionReveal>
         </ScrollView>
         <View
           pointerEvents="none"
@@ -97,6 +115,6 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: grocery.canvas },
   wash: { position: 'absolute', top: 0, left: 0, right: 0, height: 500 },
   content: { gap: 14 },
-  inset: { paddingHorizontal: 18, gap: 14 },
-  section: { gap: 6 },
+  inset: { paddingHorizontal: HOME_GUTTER, gap: 14 },
+  section: { gap: 4 },
 });
