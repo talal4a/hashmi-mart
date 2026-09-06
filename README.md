@@ -1,5 +1,20 @@
 This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
 
+## Required profile role
+
+Complete Profile requires an explicit choice of Customer, Vendor, or Rider.
+Firestore stores it as `users/{uid}.role` (`customer`, `vendor`, or `rider`) in
+the same write as the profile details and `profileComplete: true`. New accounts
+start with `role: null`; repeat sign-ins preserve the selected role.
+
+The shared profile gate requires a valid role, name, and phone. Existing accounts
+without a role return to Complete Profile with their saved details prefilled,
+even if their old completion flag is true. The role describes the account type;
+it is not a Firebase Auth custom claim or a grant of backend permissions.
+
+Run `npm run test:profile` for schema, persistence, cache, and routing regression
+checks. These use an isolated Firestore double and do not write to live accounts.
+
 # Getting Started
 
 > **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.

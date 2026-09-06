@@ -1,0 +1,3 @@
+# Generated vector artwork: one file is 340KB of path data on a single line.
+# Formatting it gains nothing and costs seconds on every run.
+src/components/onboarding/scene/art/

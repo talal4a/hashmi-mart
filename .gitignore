@@ -73,3 +73,15 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Local tooling & generated output
+.expo/
+.xcodebuild/
+.vscode/
+/output/
+
+# Local tooling & generated output
+.expo/
+.xcodebuild/
+.vscode/
+/output/

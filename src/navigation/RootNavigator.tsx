@@ -1,0 +1,81 @@
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { type NativeStackNavigationOptions } from '@react-navigation/native-stack';
+import SplashScreen from '../screens/SplashScreen';
+import OnboardingScreen from '../screens/OnboardingScreen';
+import HomeScreen from '../screens/HomeScreen';
+import LoginScreen from '../screens/LoginScreen';
+import SignupScreen from '../screens/SignupScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import CompleteProfileScreen from '../screens/CompleteProfileScreen';
+
+export type RootStackParamList = {
+  Splash: undefined;
+  Onboarding: undefined;
+  Home: undefined;
+  Login: undefined;
+  Signup: undefined;
+  ForgotPassword: undefined;
+  CompleteProfile: undefined;
+};
+
+const slideFromRight: NativeStackNavigationOptions = {
+  animation: 'slide_from_right',
+  animationDuration: 300,
+  contentStyle: { backgroundColor: '#ecfeff' },
+};
+
+const fadeThrough: NativeStackNavigationOptions = {
+  animation: 'fade',
+  animationDuration: 250,
+  contentStyle: { backgroundColor: '#ecfeff' },
+};
+
+const slideFromBottom: NativeStackNavigationOptions = {
+  animation: 'slide_from_bottom',
+  animationDuration: 350,
+  contentStyle: { backgroundColor: '#ecfeff' },
+};
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
+
+export default function RootNavigator() {
+  return (
+    <Stack.Navigator id="root" screenOptions={{ headerShown: false }}>
+      <Stack.Screen
+        name="Splash"
+        component={SplashScreen}
+        options={fadeThrough}
+      />
+      <Stack.Screen
+        name="Onboarding"
+        component={OnboardingScreen}
+        options={fadeThrough}
+      />
+      <Stack.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{ ...fadeThrough, animation: 'none' }}
+      />
+      <Stack.Screen
+        name="Login"
+        component={LoginScreen}
+        options={{ ...slideFromRight, gestureEnabled: true }}
+      />
+      <Stack.Screen
+        name="Signup"
+        component={SignupScreen}
+        options={{ ...slideFromRight, gestureEnabled: true }}
+      />
+      <Stack.Screen
+        name="ForgotPassword"
+        component={ForgotPasswordScreen}
+        options={slideFromRight}
+      />
+      <Stack.Screen
+        name="CompleteProfile"
+        component={CompleteProfileScreen}
+        options={{ ...fadeThrough, animation: 'none' }}
+      />
+    </Stack.Navigator>
+  );
+}

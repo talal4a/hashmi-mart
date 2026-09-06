@@ -1,0 +1,863 @@
+import Svg, { Path } from 'react-native-svg';
+import Animated, {
+  FadeIn,
+  FadeOut,
+  useReducedMotion,
+} from 'react-native-reanimated';
+import { useIsFocused } from '@react-navigation/native';
+import {
+  HeartbeatBar,
+  HeartbeatRing,
+  useVoiceHeartbeat,
+} from './voiceHeartbeat';
+import {
+  AppState,
+  Image,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  ArrowRight,
+  Bell,
+  Bot,
+  ChevronRight,
+  Heart,
+  Leaf,
+  Mic,
+  Plus,
+  Search,
+  ShoppingCart,
+  Star,
+} from 'lucide-react-native';
+import { useEffect, useState, type PropsWithChildren } from 'react';
+import {
+  nearbyVendors,
+  quickActions,
+  freshPicks,
+} from '../../data/groceryHome';
+import { grocery as c, softShadow } from './groceryTheme';
+
+export function HomeHeader() {
+  return (
+    <View style={s.header}>
+      <View style={s.headerTop}>
+        <View style={[s.row, { flex: 1, minWidth: 0 }]}>
+          <Image
+            source={require('../../assets/images/cart-with-lines.png')}
+            accessibilityIgnoresInvertColors
+            style={{ width: 34, height: 34, marginRight: 2 }}
+          />
+          <Text
+            style={[s.brand, { flexShrink: 1 }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+          >
+            Hashmi
+            <Text style={{ color: '#087F9C', fontStyle: 'italic' }}>Mart</Text>
+          </Text>
+        </View>
+        <View style={[s.row, { gap: 10 }]}>
+          <View style={s.circle} accessibilityLabel="Notifications, unread">
+            <Bell size={23} color={c.ink} />
+            <View style={s.dot} />
+          </View>
+          <View style={s.circle} accessibilityLabel="Cart, 3 items">
+            <ShoppingCart size={24} color={c.ink} />
+            <View style={s.count}>
+              <Text style={s.countText}>3</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+      <Text style={s.tagline}>Fresh Picks. Local Stores. Happy You.</Text>
+    </View>
+  );
+}
+const assistantPrompts = [
+  'Hi there! Need a hand?',
+  'What’s on your shopping list?',
+  'Your shopping assistant is here.',
+];
+
+function AssistantGreeting({ onDismiss }: { onDismiss: () => void }) {
+  const [promptIndex, setPromptIndex] = useState(0);
+  const focused = useIsFocused();
+  const reducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (!focused) return;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const stop = () => clearInterval(timer);
+    const start = () => {
+      stop();
+      timer = setInterval(() => setPromptIndex(index => index + 1), 4000);
+    };
+    if (AppState.currentState === 'active') start();
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') start();
+      else stop();
+    });
+    return () => {
+      stop();
+      subscription.remove();
+    };
+  }, [focused]);
+
+  useEffect(() => {
+    if (promptIndex >= assistantPrompts.length) onDismiss();
+  }, [promptIndex, onDismiss]);
+
+  return (
+    <Animated.View
+      entering={reducedMotion ? undefined : FadeIn.duration(250)}
+      exiting={reducedMotion ? undefined : FadeOut.duration(200)}
+      style={s.aiBubble}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${assistantPrompts[Math.min(promptIndex, assistantPrompts.length - 1)]} Dismiss greeting`}
+        onPress={onDismiss}
+        hitSlop={8}
+        style={s.aiBubbleContent}
+      >
+        <View style={s.aiGreetingDot} />
+        <Animated.Text
+          key={promptIndex}
+          entering={reducedMotion ? undefined : FadeIn.duration(300)}
+          style={s.aiBubbleText}
+        >
+          {assistantPrompts[Math.min(promptIndex, assistantPrompts.length - 1)]}
+        </Animated.Text>
+      </Pressable>
+      <Svg
+        pointerEvents="none"
+        width={24}
+        height={16}
+        viewBox="0 0 24 16"
+        style={s.aiBubblePointer}
+      >
+        <Path
+          d="M1 0 C4 7 10 12 16 15 C15 9 18 4 23 0"
+          fill="#F4FCFF"
+          stroke="#CDEDF7"
+          strokeWidth={1}
+          strokeLinejoin="round"
+        />
+      </Svg>
+    </Animated.View>
+  );
+}
+
+export function HomeSearchBar() {
+  const [barWidth, setBarWidth] = useState(0);
+  const [hint, setHint] = useState(true);
+  // The white field curves around the 52px AI circle with a 6px gap.
+  const centreX = barWidth - 26;
+  const meetX = centreX - Math.sqrt(32 ** 2 - 28 ** 2);
+  return (
+    <View style={s.searchWrap}>
+      <View
+        style={s.searchInner}
+        onLayout={({ nativeEvent }) => setBarWidth(nativeEvent.layout.width)}
+      >
+        {barWidth > 0 ? (
+          <Svg width={barWidth} height={56} style={s.searchBg}>
+            <Path
+              d={`M28 0 H${meetX} A32 32 0 0 0 ${meetX} 56 H28 A28 28 0 0 1 0 28 A28 28 0 0 1 28 0 Z`}
+              fill="#FFFFFF"
+            />
+          </Svg>
+        ) : null}
+        <View style={s.searchRow}>
+          <Search size={23} color={c.muted} strokeWidth={1.8} />
+          <Text numberOfLines={1} style={s.placeholder}>
+            Search for groceries, stores, or anything...
+          </Text>
+        </View>
+        <Pressable
+          accessibilityLabel="AI support chat"
+          accessibilityRole="button"
+          onPress={() => setHint(false)}
+          style={s.aiBtn}
+        >
+          <Bot size={23} color="white" strokeWidth={1.8} />
+        </Pressable>
+        {hint ? <AssistantGreeting onDismiss={() => setHint(false)} /> : null}
+      </View>
+    </View>
+  );
+}
+/** Floating WhatsApp chat entry point, docked above the tab bar. */
+export function WhatsAppButton({ style }: { style?: StyleProp<ViewStyle> }) {
+  return (
+    <View style={[s.wa, style]}>
+      <Svg width={26} height={26} viewBox="0 0 16 16">
+        <Path
+          d="M13.601 2.326A7.854 7.854 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.933 7.933 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.898 7.898 0 0 0 13.6 2.326zM7.994 14.521a6.573 6.573 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.557 6.557 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592zm3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.007-.247-.007-.38-.007a.729.729 0 0 0-.529.247c-.182.198-.691.677-.691 1.654 0 .977.71 1.916.81 2.049.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232z"
+          fill="white"
+        />
+      </Svg>
+    </View>
+  );
+}
+const waveform = [12, 22, 36, 23, 13, 8, 18, 28, 38, 25, 13, 8, 18, 30, 19, 11];
+export function VoiceOrderCard() {
+  const { width } = useWindowDimensions();
+  const { phase, micStyle } = useVoiceHeartbeat();
+  const compact = width < 360;
+  const micSize = compact ? 54 : 64;
+  const stageWidth = Math.min(160, width * 0.29);
+  return (
+    <LinearGradient
+      colors={['#F5FCFF', '#E9FAFF', '#F7FDFF']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={s.voice}
+    >
+      <View style={s.voiceCopy}>
+        <Text style={[s.voiceTitle, compact && { fontSize: 17 }]}>
+          Voice Order
+        </Text>
+        <View style={s.voiceDescriptionRow}>
+          <Text
+            style={[
+              s.voiceDescription,
+              compact && { fontSize: 10, lineHeight: 14 },
+            ]}
+          >
+            Say what you need,{'\n'}we’ll add it to your cart
+          </Text>
+          <View style={s.voiceArrow}>
+            <ChevronRight size={17} color="#05B8F2" />
+          </View>
+        </View>
+      </View>
+      <View style={[s.voiceStage, { width: stageWidth }]}>
+        <View pointerEvents="none" style={s.voiceWave}>
+          {waveform.map((height, i) => (
+            <HeartbeatBar
+              key={i}
+              phase={phase}
+              index={i}
+              count={waveform.length}
+              height={height}
+              color="#BAEEFD"
+            />
+          ))}
+        </View>
+        <View
+          style={[
+            s.voiceHalo,
+            { width: micSize + 22, height: micSize + 22, borderRadius: 60 },
+          ]}
+        >
+          <View
+            style={[
+              s.voiceInnerHalo,
+              { width: micSize + 12, height: micSize + 12, borderRadius: 50 },
+            ]}
+          >
+            <HeartbeatRing phase={phase} />
+            <HeartbeatRing phase={phase} delay={0.035} />
+            <Animated.View
+              style={[
+                s.voiceMic,
+                { width: micSize, height: micSize, borderRadius: micSize / 2 },
+                micStyle,
+              ]}
+            >
+              <Mic size={compact ? 25 : 29} color="white" strokeWidth={2.6} />
+            </Animated.View>
+          </View>
+        </View>
+      </View>
+      <View style={s.voiceNote}>
+        <Text style={s.handwriting}>Try saying{'\n'}“Add milk”</Text>
+        <Svg
+          width={32}
+          height={30}
+          viewBox="0 0 32 30"
+          style={{ marginTop: 3 }}
+        >
+          <Path
+            d="M26 2 C27 15 20 24 6 24 M6 24 L11 19 M6 24 L12 28"
+            fill="none"
+            stroke="#718596"
+            strokeWidth={1.3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </Svg>
+      </View>
+    </LinearGradient>
+  );
+}
+export function HomeRail({ children }: PropsWithChildren) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={s.rail}
+    >
+      {children}
+    </ScrollView>
+  );
+}
+/** Each product uses one cell of the locally bundled photographic contact sheet. */
+export function ProduceArt({ index, size }: { index: number; size: number }) {
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        overflow: 'hidden',
+        borderRadius: 16,
+      }}
+    >
+      <Image
+        source={require('../../assets/images/home/produce-sheet.png')}
+        accessibilityIgnoresInvertColors
+        style={{
+          position: 'absolute',
+          width: size * 3,
+          height: size * 2,
+          left: -(index % 3) * size,
+          top: -Math.floor(index / 3) * size,
+        }}
+        resizeMode="stretch"
+      />
+    </View>
+  );
+}
+export function HeroBanner() {
+  const { width } = useWindowDimensions();
+  const height = Math.max(205, (width - 36) / 3);
+  return (
+    <View style={[s.banner, { minHeight: height }]}>
+      <Image
+        source={require('../../assets/images/home/farm-fresh-banner.png')}
+        style={s.bannerPhoto}
+        resizeMode="cover"
+      />
+      <LinearGradient
+        colors={['#EEF5DE', '#EEF5DEF5', '#EEF5DE00']}
+        locations={[0, 0.4, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={s.bannerCopy}>
+        <View style={s.row}>
+          <Leaf size={14} color={c.green} fill={c.green} />
+          <Text style={s.farm}>Farm Fresh</Text>
+        </View>
+        <Text style={s.bannerTitle}>Real Food{'\n'}Brighter Days</Text>
+        <Text style={s.bannerDetail}>
+          Fresh groceries from trusted local stores{'\n'}delivered to your
+          doorstep.
+        </Text>
+        <View style={s.cta}>
+          <Text style={s.ctaText}>Shop Fresh</Text>
+          <ArrowRight size={17} color="white" />
+        </View>
+      </View>
+      <View style={s.discount}>
+        <Text style={s.upTo}>UP TO</Text>
+        <Text style={s.half}>50%</Text>
+        <Text style={s.upTo}>OFF</Text>
+      </View>
+      <View style={s.dots}>
+        {[0, 1, 2, 3].map(i => (
+          <View key={i} style={[s.pageDot, { opacity: i === 0 ? 1 : 0.5 }]} />
+        ))}
+      </View>
+    </View>
+  );
+}
+/** The 2×2 quick-action grid under the hero banner. */
+export function ActionGrid() {
+  return (
+    <View style={s.grid}>
+      {quickActions.map(item => (
+        <ActionTile key={item.name} item={item} />
+      ))}
+    </View>
+  );
+}
+export function ActionTile({ item }: { item: (typeof quickActions)[number] }) {
+  const { fontScale } = useWindowDimensions();
+  return (
+    <View
+      style={[s.tile, fontScale > 1.4 && s.tileLargeText]}
+      accessible
+      accessibilityLabel={`${item.name}. ${item.detail}`}
+    >
+      <LinearGradient
+        colors={[item.from, item.to]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.7, y: 1 }}
+        style={s.tileSurface}
+      />
+      <View pointerEvents="none" style={s.tileArt}>
+        <View style={[s.tileGroundShadow, { backgroundColor: item.accent }]} />
+        <Image
+          source={item.image}
+          style={s.tileImage}
+          resizeMode="contain"
+          accessible={false}
+          accessibilityIgnoresInvertColors
+          fadeDuration={0}
+        />
+      </View>
+      <View style={s.tileCopy}>
+        <Text style={[s.tileTitle, { color: item.accent }]}>{item.name}</Text>
+        <Text style={[s.tileDetail, { color: item.detailColor }]}>
+          {item.detail}
+        </Text>
+      </View>
+    </View>
+  );
+}
+export function VendorCard({ item }: { item: (typeof nearbyVendors)[number] }) {
+  return (
+    <View style={s.vendor}>
+      <View style={[s.vendorLogo, { backgroundColor: item.color }]}>
+        <Leaf size={20} color="white" />
+        <Text style={s.vendorMark}>{item.mark}</Text>
+      </View>
+      <View style={{ flex: 1, gap: 4 }}>
+        <Text numberOfLines={1} style={s.quickTitle}>
+          {item.name}
+        </Text>
+        <View style={[s.row, { gap: 4 }]}>
+          <Star size={11} fill="#FFAD16" color="#FFAD16" />
+          <Text style={s.vendorMeta}>
+            {item.rating} · {item.time}
+          </Text>
+        </View>
+        <Text
+          style={[
+            s.vendorMeta,
+            { color: item.delivery === 'Free delivery' ? '#14A571' : c.muted },
+          ]}
+        >
+          {item.delivery}
+        </Text>
+      </View>
+    </View>
+  );
+}
+export function FreshProductCard({
+  item,
+  width = 156,
+}: {
+  item: (typeof freshPicks)[number];
+  width?: number;
+}) {
+  return (
+    <View style={[s.product, { width }]}>
+      <View style={s.productWell}>
+        <ProduceArt index={item.art} size={width - 16} />
+        {item.discount && (
+          <View style={s.productDiscount}>
+            <Text style={s.productDiscountText}>{item.discount}% OFF</Text>
+          </View>
+        )}
+        <View style={s.heart} accessibilityLabel={`Save ${item.name}`}>
+          <Heart size={19} color="#91A0B5" />
+        </View>
+        <View style={s.add} accessibilityLabel={`Add ${item.name}`}>
+          <Plus size={24} color="white" />
+        </View>
+      </View>
+      <Text style={s.productMeta}>{item.meta}</Text>
+      <Text numberOfLines={1} style={s.productName}>
+        {item.name}
+      </Text>
+      <Text style={s.price}>Rs. {item.price}</Text>
+      <Text style={s.was}>{item.was ? `Rs. ${item.was}` : ' '}</Text>
+    </View>
+  );
+}
+const s = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  header: { gap: 2 },
+  headerTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brand: { color: c.ink, fontSize: 29, fontWeight: '800', letterSpacing: -1.2 },
+  tagline: { color: c.muted, fontSize: 11, marginLeft: 42, marginTop: 1 },
+  circle: {
+    width: 44,
+    height: 44,
+    backgroundColor: 'white',
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...softShadow,
+  },
+  dot: {
+    position: 'absolute',
+    right: 10,
+    top: 7,
+    width: 8,
+    height: 8,
+    borderRadius: 5,
+    backgroundColor: '#FF443C',
+    borderWidth: 1,
+    borderColor: 'white',
+  },
+  count: {
+    position: 'absolute',
+    right: -2,
+    top: -4,
+    width: 21,
+    height: 21,
+    borderRadius: 12,
+    backgroundColor: '#FF443C',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countText: { fontSize: 12, color: 'white', fontWeight: '600' },
+  searchWrap: { height: 100, paddingTop: 44 },
+  searchInner: { height: 56 },
+  searchBg: { position: 'absolute', top: 0, left: 0 },
+  searchRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    paddingLeft: 17,
+    paddingRight: 80,
+  },
+  placeholder: { flex: 1, fontSize: 13, color: '#8A9AB1' },
+  aiBtn: {
+    position: 'absolute',
+    right: 0,
+    top: 2,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: c.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiBubble: {
+    position: 'absolute',
+    right: 0,
+    bottom: 72,
+    backgroundColor: '#F4FCFF',
+    borderWidth: 1,
+    borderColor: '#CDEDF7',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  aiBubbleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  aiGreetingDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: c.blue,
+  },
+  aiBubbleText: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '500',
+    color: '#527B8A',
+  },
+  aiBubblePointer: {
+    position: 'absolute',
+    right: 18,
+    bottom: -15,
+  },
+  wa: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#25D366',
+    borderWidth: 2.5,
+    borderColor: 'white',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...softShadow,
+    elevation: 8,
+  },
+  voice: {
+    minHeight: 106,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: 'white',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingLeft: 18,
+    paddingRight: 9,
+    ...softShadow,
+  },
+  voiceCopy: { flex: 1, gap: 5 },
+  voiceTitle: {
+    color: c.ink,
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+  },
+  voiceDescriptionRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  voiceDescription: {
+    flexShrink: 1,
+    color: '#69818D',
+    fontSize: 11,
+    lineHeight: 15,
+    letterSpacing: -0.2,
+  },
+  voiceArrow: {
+    width: 25,
+    height: 25,
+    borderRadius: 15,
+    backgroundColor: '#DDF7FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceStage: { height: 84, alignItems: 'center', justifyContent: 'center' },
+  voiceWave: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  voiceHalo: {
+    backgroundColor: '#DFF7FD99',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceInnerHalo: {
+    backgroundColor: '#B6EEFCBB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceMic: {
+    backgroundColor: '#00B9F2',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceNote: { width: 62, alignItems: 'center', alignSelf: 'center' },
+  handwriting: {
+    fontFamily: Platform.OS === 'ios' ? 'Noteworthy' : 'cursive',
+    color: '#41586B',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+    textAlign: 'center',
+    transform: [{ rotate: '-9deg' }],
+  },
+  rail: { paddingHorizontal: 18, paddingVertical: 6, gap: 10 },
+  banner: { borderRadius: 24, overflow: 'hidden', backgroundColor: '#EEF5DE' },
+  bannerPhoto: {
+    position: 'absolute',
+    right: 0,
+    width: '100%',
+    height: '100%',
+  },
+  bannerCopy: { padding: 19, width: '76%', gap: 7 },
+  farm: { color: c.green, fontSize: 12, fontWeight: '600' },
+  bannerTitle: {
+    color: c.ink,
+    fontSize: 27,
+    lineHeight: 29,
+    fontWeight: '800',
+    letterSpacing: -0.7,
+  },
+  bannerDetail: { color: c.ink, fontSize: 11, lineHeight: 16, maxWidth: 220 },
+  cta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 12,
+    paddingHorizontal: 17,
+    paddingVertical: 10,
+    backgroundColor: '#043E35',
+    borderRadius: 25,
+    marginTop: 3,
+  },
+  ctaText: { color: 'white', fontSize: 12, fontWeight: '600' },
+  discount: {
+    position: 'absolute',
+    right: 12,
+    top: 13,
+    backgroundColor: '#D2EA82E8',
+    borderColor: '#F2FFC7',
+    borderWidth: 2,
+    width: 61,
+    height: 61,
+    borderRadius: 35,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '-8deg' }],
+  },
+  upTo: { color: '#193415', fontSize: 10, fontWeight: '700' },
+  half: { color: '#12250D', fontSize: 21, lineHeight: 23, fontWeight: '800' },
+  dots: {
+    position: 'absolute',
+    bottom: 8,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  pageDot: { width: 6, height: 6, borderRadius: 4, backgroundColor: 'white' },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    columnGap: 12,
+    rowGap: 42,
+    paddingTop: 30,
+    paddingBottom: 6,
+  },
+  tile: {
+    width: '47.5%',
+    minHeight: 198,
+    paddingTop: 120,
+    paddingHorizontal: 15,
+    paddingBottom: 17,
+    overflow: 'visible',
+  },
+  tileLargeText: { width: '100%' },
+  tileSurface: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+    shadowColor: '#365362',
+    shadowOpacity: 0.09,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  tileArt: {
+    position: 'absolute',
+    top: -32,
+    left: 0,
+    right: 0,
+    height: 148,
+    alignItems: 'center',
+  },
+  tileGroundShadow: {
+    position: 'absolute',
+    bottom: 5,
+    width: '64%',
+    maxWidth: 124,
+    height: 13,
+    borderRadius: 80,
+    opacity: 0.04,
+    transform: [{ scaleY: 0.6 }],
+  },
+  tileImage: { width: '100%', maxWidth: 190, height: 148 },
+  tileCopy: { gap: 5 },
+  tileTitle: {
+    fontSize: 21,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+  },
+  tileDetail: {
+    color: '#425563',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  vendor: {
+    width: 185,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    backgroundColor: 'white',
+    borderRadius: 19,
+    ...softShadow,
+  },
+  vendorLogo: {
+    width: 43,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vendorMark: { color: 'white', fontSize: 9, fontWeight: '800' },
+  vendorMeta: { color: c.muted, fontSize: 10 },
+  quickTitle: { fontSize: 12, fontWeight: '600', color: c.ink },
+  product: {
+    padding: 8,
+    borderRadius: 21,
+    backgroundColor: 'white',
+    ...softShadow,
+  },
+  productWell: { borderRadius: 16, backgroundColor: c.pale, marginBottom: 9 },
+  productDiscount: {
+    position: 'absolute',
+    top: 5,
+    left: 5,
+    borderRadius: 15,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    backgroundColor: c.green,
+  },
+  productDiscountText: { fontSize: 10, fontWeight: '700', color: 'white' },
+  heart: {
+    position: 'absolute',
+    right: 3,
+    top: 2,
+    width: 30,
+    height: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  add: {
+    position: 'absolute',
+    right: -2,
+    bottom: -4,
+    width: 38,
+    height: 38,
+    borderRadius: 22,
+    backgroundColor: c.blue,
+    borderWidth: 3,
+    borderColor: 'white',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productMeta: { fontSize: 10, color: c.muted, marginHorizontal: 3 },
+  productName: {
+    color: c.ink,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 3,
+    marginHorizontal: 3,
+  },
+  price: {
+    color: c.ink,
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 10,
+    marginHorizontal: 3,
+  },
+  was: {
+    color: '#8794A6',
+    fontSize: 11,
+    textDecorationLine: 'line-through',
+    marginTop: 3,
+    marginHorizontal: 3,
+    marginBottom: 3,
+  },
+});
