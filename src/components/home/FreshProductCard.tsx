@@ -9,7 +9,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Heart, Minus, Plus, Star } from 'lucide-react-native';
+import { Heart, Minus, Plus } from 'lucide-react-native';
 import type { freshPicks } from '../../data/groceryHome';
 import ProduceArt from './ProduceArt';
 import { grocery as c } from './groceryTheme';
@@ -225,11 +225,6 @@ export default function FreshProductCard({
           ) : null}
 
           <SaveButton label={item.name} />
-
-          <View style={p.ratingChip}>
-            <Star size={9} color="#F5A623" fill="#F5A623" />
-            <Text style={p.ratingText}>{item.rating}</Text>
-          </View>
         </View>
 
         <View style={p.body}>
@@ -307,19 +302,6 @@ const p = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  ratingChip: {
-    position: 'absolute',
-    left: 8,
-    bottom: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 8,
-    backgroundColor: '#FFFFFFF2',
-  },
-  ratingText: { color: '#5C6B7A', fontSize: 9.5, fontWeight: '700' },
   body: { paddingHorizontal: 2, paddingTop: 9, gap: 1 },
   meta: { color: c.muted, fontSize: 10, letterSpacing: -0.1 },
   name: {
