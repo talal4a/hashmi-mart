@@ -1,4 +1,6 @@
-import { useRef } from 'react';
+import { useCallback, useRef } from 'react';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BlurTargetView } from 'expo-blur';
 import HomeBottomNav, {
   TAB_BAR_HEIGHT,
@@ -23,11 +25,22 @@ import {
 } from '../components/home/GroceryHome';
 import { freshPicks, nearbyVendors } from '../data/groceryHome';
 import { grocery, HOME_GUTTER } from '../components/home/groceryTheme';
+import type { RootStackParamList } from '../navigation/RootNavigator';
 
-/** Reference-led, static Home mockup. Controls intentionally have no app actions. */
+/**
+ * Reference-led Home. Most controls are still mockup; the two support entry
+ * points are not — the AI button opens Hashmi AI and the floating green button
+ * opens WhatsApp, which is what PRD section 10 asks the app to keep reachable.
+ */
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const blurTarget = useRef<View>(null);
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const openSupport = useCallback(
+    () => navigation.navigate('Support'),
+    [navigation],
+  );
   return (
     <View style={s.screen}>
       <StatusBar barStyle="dark-content" backgroundColor="#E8F7FF" />
@@ -45,7 +58,7 @@ export default function HomeScreen() {
         >
           <View style={s.inset}>
             <HomeHeader />
-            <HomeSearchBar />
+            <HomeSearchBar onOpenSupport={openSupport} />
             <VoiceOrderCard />
           </View>
           <View style={s.inset}>

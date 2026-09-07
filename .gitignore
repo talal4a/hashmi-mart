@@ -85,3 +85,14 @@ yarn-error.log
 .xcodebuild/
 .vscode/
 /output/
+
+# Firebase Functions
+functions/node_modules/
+functions/lib/
+functions/.env
+functions/.env.*
+!functions/.env.example
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

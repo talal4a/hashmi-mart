@@ -7,6 +7,7 @@ import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import CompleteProfileScreen from '../screens/CompleteProfileScreen';
+import SupportScreen from '../screens/SupportScreen';
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -16,6 +17,7 @@ export type RootStackParamList = {
   Signup: undefined;
   ForgotPassword: undefined;
   CompleteProfile: undefined;
+  Support: undefined;
 };
 
 const slideFromRight: NativeStackNavigationOptions = {
@@ -75,6 +77,14 @@ export default function RootNavigator() {
         name="CompleteProfile"
         component={CompleteProfileScreen}
         options={{ ...fadeThrough, animation: 'none' }}
+      />
+      {/* Support rises from the bottom, the way a chat sheet should, and stays
+          swipe-dismissable — it is somewhere you drop into and back out of,
+          not a place in the app's hierarchy. */}
+      <Stack.Screen
+        name="Support"
+        component={SupportScreen}
+        options={{ ...slideFromBottom, gestureEnabled: true }}
       />
     </Stack.Navigator>
   );

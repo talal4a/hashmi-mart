@@ -8,6 +8,7 @@ import {
   type Persistence,
 } from 'firebase/auth';
 import { initializeFirestore, enableNetwork, Firestore } from 'firebase/firestore';
+import { getFunctions, type Functions } from 'firebase/functions';
 
 
 const firebaseConfig = {
@@ -53,3 +54,13 @@ try {
 enableNetwork(db).catch(() => {});
 
 export { db };
+
+/**
+ * Callable functions, pinned to the region `functions/src/index.ts` deploys to.
+ *
+ * The region is stated rather than defaulted because a mismatch here does not
+ * fail loudly — it fails as `functions/not-found` on every support message,
+ * which reads like a broken feature rather than a misconfigured client.
+ */
+export const functions: Functions = getFunctions(app, 'us-central1');
+
