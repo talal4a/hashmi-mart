@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Pause, Play } from 'lucide-react-native';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
@@ -36,24 +36,80 @@ export default function VoiceMessage({ message }: { message: SupportMessage }) {
   const playback = useAudioPlayerStatus(player);
   const [failed, setFailed] = useState(false);
 
-  // The player does not rewind itself, so a second tap on a finished note would
-  // otherwise do nothing at all.
+  /**
+   * Rewind at the end — paused first, which is the whole fix.
+   *
+   * The player does not rewind itself, so without this a second tap on a
+   * finished note does nothing. But seeking a player that has not been paused
+   * makes it resume from the new position, so the previous version restarted
+   * the note the instant it ended and every time after that: an accidental
+   * loop with no way to stop it. Pausing before the seek leaves the note at
+   * zero and stopped, which is what a finished voice message should be.
+   *
+   * `loop` is set explicitly for the same reason — never inherit a playback
+   * mode you did not ask for.
+   */
   useEffect(() => {
-    if (playback.didJustFinish) player.seekTo(0).catch(() => {});
+    player.loop = false;
+  }, [player]);
+
+  // `didJustFinish` stays true across several status polls, so without this
+  // latch the pause/seek pair runs repeatedly and fights the user's next tap.
+  const rewound = useRef(false);
+  useEffect(() => {
+    if (!playback.didJustFinish) {
+      rewound.current = false;
+      return;
+    }
+    if (rewound.current) return;
+    rewound.current = true;
+    try {
+      player.pause();
+      player.seekTo(0).catch(() => {});
+    } catch {
+      // Nothing to recover: the note has already finished playing.
+    }
   }, [playback.didJustFinish, player]);
 
-  const toggle = () => {
+  const toggle = useCallback(() => {
     try {
-      if (playback.playing) player.pause();
-      else player.play();
+      if (playback.playing) {
+        player.pause();
+        return;
+      }
+      // A note tapped again after it ended starts from the beginning rather
+      // than from wherever the last seek left the head.
+      if (playback.duration > 0 && playback.currentTime >= playback.duration - 0.05) {
+        player.seekTo(0).catch(() => {});
+      }
+      player.play();
     } catch {
       // A cache file the OS reclaimed. The transcript is still the useful part
       // of this card, so the row degrades rather than erroring.
       setFailed(true);
     }
-  };
+  }, [playback.playing, playback.currentTime, playback.duration, player]);
 
   const progress = playback.duration > 0 ? playback.currentTime / playback.duration : 0;
+
+  /**
+   * Elapsed while it is being listened to, total length otherwise.
+   *
+   * "Otherwise" has to include *paused part-way through*, which the obvious
+   * `playing ? elapsed : total` gets wrong: pausing halfway would snap the
+   * number back to the full length, which reads as the note having reset. So
+   * the readout follows the play head whenever it has moved, and falls back to
+   * the recorded length only at rest.
+   *
+   * The recorded length is preferred over the player's own duration because it
+   * is known before the file has finished loading — the card can show 0:07
+   * immediately instead of 0:00 followed by a jump.
+   */
+  const total = message.durationMs ?? playback.duration * 1000;
+  const started = playback.currentTime > 0.05;
+  const readout = formatDuration(
+    playback.playing || started ? playback.currentTime * 1000 : total,
+  );
 
   return (
     <Animated.View
@@ -76,7 +132,7 @@ export default function VoiceMessage({ message }: { message: SupportMessage }) {
           )}
         </PressableScale>
 
-        <View style={s.trace} accessible={false}>
+        <View style={s.trace} accessible={false} importantForAccessibility="no">
           {TRACE.map((level, index) => (
             <View
               key={index}
@@ -93,13 +149,7 @@ export default function VoiceMessage({ message }: { message: SupportMessage }) {
           ))}
         </View>
 
-        <Text style={s.duration}>
-          {formatDuration(
-            playback.playing && playback.duration > 0
-              ? playback.currentTime * 1000
-              : (message.durationMs ?? playback.duration * 1000),
-          )}
-        </Text>
+        <Text style={s.duration}>{readout}</Text>
       </View>
 
       {message.transcript ? (

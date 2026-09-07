@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg';
+import { Bot } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -17,14 +18,18 @@ import { support } from './supportTheme';
 /**
  * Hashmi AI's face.
  *
- * Drawn rather than emoji, because PRD section 6.1 asks for "a real HashmiMart
- * assistant asset, not a robot emoji" — and because an emoji is the platform's
- * artwork, not the brand's: it changes shape between Android versions and looks
- * like a placeholder that was never replaced. This is the app's own mark, built
- * from the same shopping-basket silhouette as the splash logo with the cyan the
- * rest of the product already uses.
+ * The same bot glyph as the button in the home search bar, on the same cyan.
+ * That is the whole design argument: the user taps a bot and a bot answers, so
+ * the thing they tapped and the thing that replies must be recognisably one
+ * character. An earlier version drew a shopping basket here — on brand for the
+ * store, but it made the assistant look like a *cart* rather than someone to
+ * talk to, and it shared nothing with the control that opened it.
  *
- * Three states, per section 8.8, and the restraint is the specification:
+ * The disc is a gradient rather than the button's flat fill. At 30px beside a
+ * message it needs a little more presence than a tab-bar control, and the
+ * gradient is what separates "identity" from "button" without changing the hue.
+ *
+ * Three states, and the restraint is the specification:
  *
  *   idle      a breath every few seconds, ~3% — barely visible, and that is the
  *             point. A continuously bouncing avatar reads as a loading spinner.
@@ -105,39 +110,31 @@ export default function HashmiAvatar({ size = 34, state = 'idle' }: Props) {
         style={[s.ring, { borderRadius: size }, ringStyle]}
       />
       <Animated.View style={markStyle}>
-        <Svg width={size} height={size} viewBox="0 0 44 44">
-          <Defs>
-            <LinearGradient id="hm-disc" x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0" stopColor="#4FD3FF" />
-              <Stop offset="1" stopColor={support.accentDeep} />
-            </LinearGradient>
-          </Defs>
-          <Circle cx="22" cy="22" r="22" fill="url(#hm-disc)" />
-          {/* The basket from the HashmiMart mark, simplified to read at 28px. */}
-          <Path
-            d="M13 17.5 H31 L28.8 30.5 C28.65 31.4 27.9 32 27 32 H17 C16.1 32 15.35 31.4 15.2 30.5 Z"
-            fill="#FFFFFF"
-            opacity={0.96}
+        <LinearGradient
+          colors={['#4FD3FF', support.accentDeep]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[
+            s.disc,
+            { width: size, height: size, borderRadius: size / 2 },
+          ]}
+        >
+          {/* Matched to the home search bar's button: white glyph, same family.
+              Half the disc leaves the optical margin a round badge needs — a
+              larger glyph reads as cramped rather than bold. */}
+          <Bot
+            size={Math.round(size * 0.5)}
+            color="#FFFFFF"
+            strokeWidth={2.2}
           />
-          <Path
-            d="M17.6 17.5 C17.6 13.9 19.6 11.6 22 11.6 C24.4 11.6 26.4 13.9 26.4 17.5"
-            fill="none"
-            stroke="#FFFFFF"
-            strokeWidth={2.3}
-            strokeLinecap="round"
-          />
-          {/* The spark that says this basket answers back. */}
-          <Path
-            d="M33.2 10.4 L34.3 13.1 L37 14.2 L34.3 15.3 L33.2 18 L32.1 15.3 L29.4 14.2 L32.1 13.1 Z"
-            fill="#FFFFFF"
-          />
-        </Svg>
+        </LinearGradient>
       </Animated.View>
     </View>
   );
 }
 
 const s = StyleSheet.create({
+  disc: { alignItems: 'center', justifyContent: 'center' },
   ring: {
     position: 'absolute',
     top: -4,
