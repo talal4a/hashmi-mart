@@ -20,7 +20,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import useStoredProfile from '../hooks/useStoredProfile';
+import useProfileIdentity from '../hooks/useProfileIdentity';
 import useSupportChat from '../hooks/useSupportChat';
 import useVoiceRecorder from '../hooks/useVoiceRecorder';
 import { AVATARS } from '../components/profile/avatars/catalog';
@@ -64,7 +64,7 @@ export default function SupportScreen() {
   const { width, height } = useWindowDimensions();
   const reduced = useReducedMotion();
 
-  const { user, profile } = useStoredProfile();
+  const { user, profile } = useProfileIdentity();
   const chat = useSupportChat();
   const recorder = useVoiceRecorder();
 
