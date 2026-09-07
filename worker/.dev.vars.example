@@ -1,0 +1,3 @@
+# Local `wrangler dev` only. Copy to worker/.dev.vars and paste a real key there.
+# .dev.vars is gitignored; production uses `wrangler secret put GROQ_API_KEY`.
+GROQ_API_KEY=gsk_replace_me

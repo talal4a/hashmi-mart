@@ -1,7 +1,0 @@
-node_modules/
-lib/
-# Every one of these can hold GROQ_API_KEY. None of them may ever be committed.
-.env
-.env.*
-!.env.example
-.runtimeconfig.json

@@ -177,11 +177,6 @@ export default function useVoiceRecorder() {
   };
 }
 
-/** Reads a recording as base64 for the transcription callable. */
-export async function readAsBase64(uri: string): Promise<string> {
-  return new File(uri).base64();
-}
-
 /** mm:ss, which is all a voice note ever needs. */
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 1000));

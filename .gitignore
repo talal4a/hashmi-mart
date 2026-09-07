@@ -86,13 +86,20 @@ yarn-error.log
 .vscode/
 /output/
 
-# Firebase Functions
-functions/node_modules/
-functions/lib/
-functions/.env
-functions/.env.*
-!functions/.env.example
-.firebase/
-firebase-debug.log
-firestore-debug.log
-ui-debug.log
+# Support Worker (Cloudflare)
+worker/node_modules/
+worker/.wrangler/
+worker/.test-build/
+
+# Local secrets, wherever they end up.
+#
+# Path-anchored rules are not enough on their own: these lived under functions/
+# before the backend moved to worker/, and a directory-scoped ignore stops
+# applying the moment the directory it names is deleted — which is exactly when
+# `git add -A` would sweep the key in. Matching by filename anywhere means a
+# future move cannot un-ignore a credential.
+**/.env.local
+**/.env.*.local
+**/.dev.vars
+**/.dev.vars.*
+!**/.dev.vars.example

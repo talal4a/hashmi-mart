@@ -1,7 +1,10 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "types": ["jest", "node"]
+    "types": [
+      "jest",
+      "node"
+    ]
   },
   "include": [
     "**/*.ts",
@@ -9,6 +12,7 @@
     "nativewind-env.d.ts"
   ],
   "exclude": [
-    "**/node_modules"
+    "**/node_modules",
+    "worker"
   ]
 }

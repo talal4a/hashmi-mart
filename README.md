@@ -20,6 +20,10 @@ checks. These use an isolated Firestore double and do not write to live accounts
 Support lives at the `Support` route and opens from the AI button in the home
 search bar. The floating green button on Home opens WhatsApp directly.
 
+```
+Expo app  ->  Cloudflare Worker  ->  Groq API
+```
+
 ### The Groq key is server-side. Always.
 
 The Groq API key must never reach the Expo bundle — not in `app.config.js`, not
@@ -27,56 +31,96 @@ in an `EXPO_PUBLIC_*` variable, not in a constant. Anything shipped in the app
 is extractable from the APK in minutes, and a leaked key is somebody else's
 inference bill charged to this account.
 
-The key lives in `functions/` and only there. The app talks to two callables,
-`supportChat` and `supportTranscribe`, which are the only code that ever sees it.
+The key lives in `worker/` and only there.
 
-**Production** — store it in Secret Manager, once:
+**Production** — store it as a Worker secret, once:
 
 ```sh
-firebase functions:secrets:set GROQ_API_KEY   # paste the key when prompted
-firebase deploy --only functions
+cd worker
+npx wrangler secret put GROQ_API_KEY   # paste the key when prompted
+npx wrangler deploy
 ```
 
-**Local emulator** — copy the example file and paste a key into the copy.
-`functions/.env.local` is gitignored; `functions/.env.example` is the committed
+Then point the app at the deployed Worker. The URL is public, not a secret:
+
+```sh
+# .env, or your build environment
+EXPO_PUBLIC_SUPPORT_API_URL=https://hashmimart-support.<your-subdomain>.workers.dev
+```
+
+**Local dev** — copy the example file and paste a key into the copy.
+`worker/.dev.vars` is gitignored; `worker/.dev.vars.example` is the committed
 placeholder.
 
 ```sh
-cp functions/.env.example functions/.env.local
-firebase emulators:start --only functions,auth
+cd worker
+cp .dev.vars.example .dev.vars
+npx wrangler dev            # serves on http://127.0.0.1:8787
 ```
 
-To point the app at the emulator, add `connectFunctionsEmulator(functions,
-'127.0.0.1', 5001)` beside the `functions` export in `src/config/firebase.ts` —
-and take it out again before shipping.
+Then run the app with `EXPO_PUBLIC_SUPPORT_API_URL=http://127.0.0.1:8787`. On a
+physical Android device use your machine's LAN IP, not localhost.
+
+`curl https://<worker>/health` returns `{"ok":true}` without touching Groq or
+your token — it distinguishes "the Worker is deployed" from "the key is wrong".
 
 If a key is ever pasted into a chat, a commit, a screenshot or an issue, treat
 it as public and rotate it at <https://console.groq.com/keys>. Revoking is free;
 finding out later is not.
 
+### Authentication
+
+Firebase callables used to verify the caller's ID token before any handler code
+ran. A Worker gets none of that, so `worker/src/auth.ts` does it by hand: the
+app sends its Firebase ID token as a bearer token, and the Worker verifies the
+RS256 signature against Google's published JWKS, then checks `aud`, `iss` and
+`exp`.
+
+Without that check this endpoint would be a public Groq proxy. `npm test` in
+`worker/` runs it against real forged tokens — rewritten uid, wrong signing key,
+`alg:none`, expired, and a valid Google-signed token minted in *someone else's*
+Firebase project, which is the case that is easiest to miss and cheapest to
+exploit.
+
 ### What the backend guarantees
 
-- Callers must be signed in — an open endpoint is free inference for anyone.
+- Callers must be signed in, verified cryptographically on every request.
 - History is re-validated server-side: turn count, length, and role are all
   capped there, because a modified client will not cap them.
-- Groq errors never reach the app. Every upstream fault becomes one of six
-  friendly messages in `supportService.ts`; the real cause is logged.
-- The system prompt lives in `functions/src/prompt.ts`, so it can be corrected
+- Groq errors never reach the app. Every upstream fault becomes an HTTP status
+  that `supportService.ts` maps to one of six friendly messages; the real cause
+  goes to `wrangler tail`.
+- The system prompt lives in `worker/src/prompt.ts`, so it can be corrected
   without shipping a new build. It forbids inventing order, payment, refund,
   delivery or rider facts — the assistant says it cannot verify and offers
   WhatsApp instead.
 - Order context is supplied by the server or not at all
   (`src/services/supportContext.ts` is the seam, and returns `null` today).
 
-### Client layout
+### Streaming
+
+The Worker forwards Groq's own SSE stream rather than buffering it. On the
+client, React Native's `fetch` cannot read a streaming body, so
+`src/services/sse.ts` reads growing `responseText` off an `XMLHttpRequest`. If a
+platform or proxy buffers the whole response anyway, every frame is still parsed
+at the end — streaming degrades to non-streaming, never to nothing.
+
+### Layout
 
 ```
+worker/src/index.ts                  POST /chat (SSE), POST /transcribe
+worker/src/auth.ts                   Firebase ID token verification
+worker/src/groq.ts                   the only file that sees the key
+worker/src/prompt.ts                 the assistant's rules
+
 src/screens/SupportScreen.tsx        the screen
 src/hooks/useSupportChat.ts          conversation state, streaming, retry
 src/hooks/useVoiceRecorder.ts        shared mic + level metering
-src/services/supportService.ts       the two callables, and error mapping
+src/services/supportService.ts       backend calls and error mapping
+src/services/sse.ts                  SSE over XHR, because RN fetch can't
 src/components/support/              header, messages, chips, composer, cards
 src/components/voice/                AnimatedMic, VoiceWaveform, VoiceRecorder
+src/config/backend.ts                the Worker URL (public)
 src/config/support.ts                WhatsApp number, quick actions
 ```
 
@@ -87,8 +131,12 @@ Voice notes need `expo-audio` and haptics need `expo-haptics`, both native
 modules — rebuild the dev client (`npx expo run:android` / `run:ios`) after
 pulling; a Metro reload alone will not pick them up.
 
-Run `npx jest tests/ai-support` for the support service, WhatsApp deep link, and
-error-mapping checks.
+### Tests
+
+```sh
+npx jest tests/ai-support   # SSE parsing, error mapping, WhatsApp deep link
+npm --prefix worker test    # ID token verification against forged tokens
+```
 
 # Getting Started
 

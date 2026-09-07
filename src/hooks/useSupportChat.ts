@@ -6,7 +6,7 @@ import {
   transcribeVoice,
   type SupportTurn,
 } from '../services/supportService';
-import { readAsBase64, type Recording } from './useVoiceRecorder';
+import type { Recording } from './useVoiceRecorder';
 import type { SupportMessage } from '../types/support';
 
 /**
@@ -182,8 +182,10 @@ export default function useSupportChat() {
       setError(null);
 
       try {
-        const base64 = await readAsBase64(recording.uri);
-        const transcript = await transcribeVoice(base64, recording.mimeType);
+        const transcript = await transcribeVoice(
+          recording.uri,
+          recording.mimeType,
+        );
         if (!mounted.current) return;
 
         if (!transcript) {

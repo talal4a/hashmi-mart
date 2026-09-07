@@ -5,7 +5,9 @@ export const account = {
   displayName: 'Test User',
   email: 'test@example.com',
   photoURL: null,
-} as User;
+  // Support attaches this to every backend call; the Worker verifies it.
+  getIdToken: jest.fn(async () => 'test-id-token'),
+} as unknown as User;
 
 export const completeProfile = {
   name: 'Test User',
@@ -18,8 +20,6 @@ export const completeProfile = {
 export const documents = new Map<string, Record<string, unknown>>();
 export const auth = { currentUser: null as User | null };
 export const db = {};
-/** Support's callables never run in tests; the module only needs the handle. */
-export const functions = {};
 export const listeners = new Set<(user: User | null) => void>();
 
 export function emitAuth(user: User | null) {
@@ -43,12 +43,6 @@ export const authSdk = {
   sendPasswordResetEmail: jest.fn(),
   onAuthStateChanged: jest.fn(),
   GoogleAuthProvider: { credential: jest.fn() },
-};
-
-/** `firebase/functions`, stubbed per test via `functionsSdk.httpsCallable`. */
-export const functionsSdk = {
-  getFunctions: jest.fn(() => functions),
-  httpsCallable: jest.fn(),
 };
 
 export const googleSdk = {

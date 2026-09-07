@@ -8,35 +8,82 @@ import {
 import { openWhatsApp } from '../../src/utils/whatsapp';
 import { QUICK_ACTIONS, SUPPORT_PHONE_E164 } from '../../src/config/support';
 import { loadSupportContext } from '../../src/services/supportContext';
-import { functionsSdk } from '../support/firebase';
+import { account, auth } from '../support/firebase';
 
 /**
  * The parts of AI Support that can be wrong without anyone noticing.
  *
- * Deliberately not the animations — those are verified by looking at them, and a
- * test that asserts a spring's damping only makes the spring harder to tune.
+ * Deliberately not the animations — those are verified by looking at them, and
+ * a test that asserts a spring's damping only makes the spring harder to tune.
  * What is covered here is the wiring nobody sees fail: the WhatsApp number, the
- * error mapping that stands between a raw Firebase code and the user, and the
+ * ID token that stands between the Worker and a free Groq proxy, the error
+ * mapping between an HTTP status and something a person can read, and the
  * promise that a malformed backend answer is treated as a failure rather than
  * rendered as a message.
  */
 
-function mockCallable(impl: {
-  stream?: (...args: unknown[]) => unknown;
-  call?: (...args: unknown[]) => unknown;
-}) {
-  const callable = Object.assign(
-    jest.fn((...args: unknown[]) => impl.call?.(...args)),
-    { stream: jest.fn((...args: unknown[]) => impl.stream?.(...args)) },
-  );
-  (functionsSdk.httpsCallable as jest.Mock).mockReturnValue(callable);
-  return callable;
+type Listener = () => void;
+
+class FakeXHR {
+  static last: FakeXHR | null = null;
+  readyState = 0;
+  status = 200;
+  responseText = '';
+  responseType = '';
+  timeout = 0;
+  headers: Record<string, string> = {};
+  sent: string | null = null;
+  onreadystatechange: Listener | null = null;
+  onload: Listener | null = null;
+  onerror: Listener | null = null;
+  ontimeout: Listener | null = null;
+  onabort: Listener | null = null;
+
+  constructor() {
+    FakeXHR.last = this;
+  }
+  open() {}
+  setRequestHeader(key: string, value: string) {
+    this.headers[key] = value;
+  }
+  send(body: string) {
+    this.sent = body;
+  }
+  abort() {
+    this.onabort?.();
+  }
+  deliver(frames: string, status = 200) {
+    this.responseText = frames;
+    this.readyState = 3;
+    this.onreadystatechange?.();
+    this.status = status;
+    this.readyState = 4;
+    this.onload?.();
+  }
 }
 
-/** An async iterable of chunks, which is what `.stream()` hands back. */
-async function* chunks(values: { delta: string }[]) {
-  for (const value of values) yield value;
+const frame = (payload: unknown) => `data: ${JSON.stringify(payload)}\n\n`;
+
+/**
+ * Waits for the request to actually be opened.
+ *
+ * `askSupport` awaits a Firebase ID token before it touches the network, so the
+ * XHR does not exist on the first microtask tick — and counting ticks by hand is
+ * how a test becomes sensitive to an unrelated `await` being added later.
+ */
+async function openedRequest(): Promise<FakeXHR> {
+  for (let i = 0; i < 50; i += 1) {
+    await Promise.resolve();
+    if (FakeXHR.last?.sent != null) return FakeXHR.last;
+  }
+  throw new Error('no request was opened');
 }
+
+beforeEach(() => {
+  (global as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = FakeXHR;
+  FakeXHR.last = null;
+  auth.currentUser = account;
+});
 
 describe('WhatsApp escalation', () => {
   it('opens the client-specified number in international form', async () => {
@@ -63,7 +110,7 @@ describe('WhatsApp escalation', () => {
 describe('quick actions', () => {
   it('sends prompts in the user’s language, not the label’s', () => {
     // The labels are English because the client asked for them; the prompts are
-    // what the model sees, and section 5.1 wants it answering in Urdu.
+    // what the model sees, and the assistant must answer in Urdu.
     const track = QUICK_ACTIONS.find(a => a.id === 'track');
     expect(track?.label).toBe('Track my order');
     expect(track?.prompt).toMatch(/order/i);
@@ -73,82 +120,118 @@ describe('quick actions', () => {
 });
 
 describe('askSupport', () => {
-  it('accumulates real deltas and returns the settled answer', async () => {
-    mockCallable({
-      stream: async () => ({
-        stream: chunks([{ delta: 'Aap ka ' }, { delta: 'order ' }, { delta: 'raaste mein hai.' }]),
-        data: Promise.resolve({ content: 'Aap ka order raaste mein hai.', handoff: false }),
-      }),
+  it('authenticates every request with the user’s Firebase ID token', async () => {
+    const pending = askSupport('Mera order kahan hai?', [], () => {});
+    const xhr = await openedRequest();
+
+    // Without this header the Worker rejects the call — and if the Worker ever
+    // stopped requiring it, the endpoint would be a free Groq proxy.
+    expect(xhr.headers.Authorization).toBe('Bearer test-id-token');
+
+    xhr.deliver(frame({ done: true, content: 'Theek hai.', handoff: false }));
+    await expect(pending).resolves.toMatchObject({ content: 'Theek hai.' });
+  });
+
+  it('refuses to call the backend when nobody is signed in', async () => {
+    auth.currentUser = null;
+    await expect(askSupport('hi', [], () => {})).rejects.toMatchObject({
+      kind: 'unauthenticated',
     });
+  });
 
+  it('accumulates real deltas and resolves with the settled answer', async () => {
     const deltas: string[] = [];
-    const result = await askSupport('Mera order kahan hai?', [], d => deltas.push(d));
+    const pending = askSupport('Mera order kahan hai?', [], d => deltas.push(d));
+    const xhr = await openedRequest();
 
-    expect(deltas).toEqual(['Aap ka ', 'order ', 'raaste mein hai.']);
-    expect(result.content).toBe('Aap ka order raaste mein hai.');
-    expect(result.handoff).toBe(false);
+    xhr.deliver(
+      frame({ delta: 'Aap ka ' }) +
+        frame({ delta: 'order raaste mein hai.' }) +
+        frame({ done: true, content: 'Aap ka order raaste mein hai.', handoff: false }),
+    );
+
+    await expect(pending).resolves.toEqual({
+      content: 'Aap ka order raaste mein hai.',
+      handoff: false,
+    });
+    expect(deltas).toEqual(['Aap ka ', 'order raaste mein hai.']);
   });
 
   it('surfaces the handoff flag the backend decided on', async () => {
-    mockCallable({
-      stream: async () => ({
-        stream: chunks([]),
-        data: Promise.resolve({ content: 'WhatsApp par baat karein.', handoff: true }),
-      }),
-    });
-    const result = await askSupport('Refund chahiye', [], () => {});
-    expect(result.handoff).toBe(true);
+    const pending = askSupport('Refund chahiye', [], () => {});
+    (await openedRequest()).deliver(
+      frame({ done: true, content: 'WhatsApp par baat karein.', handoff: true }),
+    );
+    await expect(pending).resolves.toMatchObject({ handoff: true });
   });
 
-  it('treats a malformed response as a failure instead of a message', async () => {
-    mockCallable({
-      stream: async () => ({ stream: chunks([]), data: Promise.resolve({ content: '' }) }),
-    });
-    await expect(askSupport('hi', [], () => {})).rejects.toMatchObject({
-      kind: 'unavailable',
-    });
+  it('treats an empty answer as a failure instead of a message', async () => {
+    const pending = askSupport('hi', [], () => {});
+    (await openedRequest()).deliver(frame({ done: true, content: '   ', handoff: false }));
+    await expect(pending).rejects.toMatchObject({ kind: 'unavailable' });
   });
 
   it.each([
-    ['functions/unauthenticated', 'unauthenticated'],
-    ['functions/resource-exhausted', 'busy'],
-    ['functions/deadline-exceeded', 'timeout'],
-    ['functions/unavailable', 'unavailable'],
-    ['functions/internal', 'unavailable'],
-  ])('maps %s to %s', async (code, kind) => {
-    mockCallable({
-      stream: async () => {
-        throw Object.assign(new Error('boom'), { code });
-      },
-    });
-    await expect(askSupport('hi', [], () => {})).rejects.toMatchObject({ kind });
+    [401, 'unauthenticated'],
+    [429, 'busy'],
+    [504, 'timeout'],
+    [503, 'unavailable'],
+  ])('maps HTTP %s to %s', async (status, kind) => {
+    const pending = askSupport('hi', [], () => {});
+    (await openedRequest()).deliver('', status as number);
+    await expect(pending).rejects.toMatchObject({ kind });
   });
 
   it('distinguishes a user-requested stop from a failure', async () => {
-    mockCallable({
-      stream: async () => {
-        throw Object.assign(new Error('aborted'), { name: 'AbortError' });
-      },
-    });
-    await expect(askSupport('hi', [], () => {})).rejects.toMatchObject({
-      kind: 'aborted',
-    });
+    const controller = new AbortController();
+    const pending = askSupport('hi', [], () => {}, controller.signal);
+    await openedRequest();
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ kind: 'aborted' });
   });
 });
 
 describe('transcribeVoice', () => {
-  it('returns the trimmed transcript', async () => {
-    mockCallable({ call: async () => ({ data: { text: '  Mera order late hai.  ' } }) });
-    await expect(transcribeVoice('AAAA', 'audio/m4a')).resolves.toBe(
-      'Mera order late hai.',
+  it('uploads the recording as a streamed file part, not base64', async () => {
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: '  Mera order late hai.  ' }),
+    }));
+    (global as unknown as { fetch: unknown }).fetch = fetchMock;
+
+    await expect(
+      transcribeVoice('file:///tmp/note.m4a', 'audio/m4a'),
+    ).resolves.toBe('Mera order late hai.');
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      'Bearer test-id-token',
     );
+    expect(init.body).toBeInstanceOf(FormData);
+    // Setting Content-Type by hand loses the multipart boundary RN generates,
+    // and the Worker then cannot parse the body at all.
+    expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined();
   });
 
   it('never invents a transcript when the backend returns none', async () => {
-    mockCallable({ call: async () => ({ data: {} }) });
-    await expect(transcribeVoice('AAAA', 'audio/m4a')).rejects.toBeInstanceOf(
-      SupportError,
-    );
+    (global as unknown as { fetch: unknown }).fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    }));
+    await expect(
+      transcribeVoice('file:///tmp/note.m4a', 'audio/m4a'),
+    ).rejects.toBeInstanceOf(SupportError);
+  });
+
+  it('reports a dead connection as offline rather than a backend fault', async () => {
+    (global as unknown as { fetch: unknown }).fetch = jest.fn(async () => {
+      throw new TypeError('Network request failed');
+    });
+    await expect(
+      transcribeVoice('file:///tmp/note.m4a', 'audio/m4a'),
+    ).rejects.toMatchObject({ kind: 'offline' });
   });
 });
 
@@ -165,15 +248,15 @@ describe('supportErrorMessage', () => {
     for (const kind of kinds) {
       const message = supportErrorMessage(kind);
       expect(message.length).toBeGreaterThan(0);
-      expect(message).not.toMatch(/firebase|groq|functions\/|http|stack/i);
+      expect(message).not.toMatch(/groq|worker|cloudflare|firebase|http|stack/i);
     }
   });
 });
 
 describe('support context', () => {
   it('supplies nothing until a trusted backend exists', async () => {
-    // Section 16: with no verified context, the assistant must not be handed
-    // order data it could then state as fact.
+    // With no verified context, the assistant must not be handed order data it
+    // could then state as fact.
     await expect(loadSupportContext()).resolves.toBeNull();
   });
 });

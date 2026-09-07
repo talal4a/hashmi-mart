@@ -1,0 +1,14 @@
+name = "hashmimart-support"
+main = "src/index.ts"
+compatibility_date = "2025-01-15"
+
+# Not secrets — the project id is public (it ships in the app's Firebase config),
+# and the allowed origin is just a string. Secrets go in via
+# `wrangler secret put`, never here: this file is committed.
+[vars]
+FIREBASE_PROJECT_ID = "hahmi-mart"
+
+# Set with:
+#   wrangler secret put GROQ_API_KEY
+#
+# For local dev, put it in worker/.dev.vars (gitignored) instead.

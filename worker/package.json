@@ -1,0 +1,20 @@
+{
+  "name": "hashmimart-support-worker",
+  "description": "Cloudflare Worker between the Expo app and Groq. The Groq key lives here and only here.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "tail": "wrangler tail",
+    "build:test": "esbuild src/auth.ts --bundle --format=esm --platform=neutral --outfile=.test-build/auth.mjs",
+    "test": "npm run build:test && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260903.1",
+    "typescript": "^5.7.3",
+    "wrangler": "^4.0.0",
+    "esbuild": "^0.25.0"
+  }
+}
