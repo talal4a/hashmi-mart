@@ -98,6 +98,9 @@ worker/.test-build/
 # applying the moment the directory it names is deleted — which is exactly when
 # `git add -A` would sweep the key in. Matching by filename anywhere means a
 # future move cannot un-ignore a credential.
+.env
+.env.*
+!.env.example
 **/.env.local
 **/.env.*.local
 **/.dev.vars
