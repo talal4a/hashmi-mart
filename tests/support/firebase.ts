@@ -5,7 +5,9 @@ export const account = {
   displayName: 'Test User',
   email: 'test@example.com',
   photoURL: null,
-} as User;
+  // Support attaches this to every backend call; the Worker verifies it.
+  getIdToken: jest.fn(async () => 'test-id-token'),
+} as unknown as User;
 
 export const completeProfile = {
   name: 'Test User',
