@@ -21,8 +21,14 @@ import { grocery } from './groceryTheme';
 
 export const TAB_BAR_HEIGHT = 72;
 export const TAB_BAR_GAP = 12;
-export const TAB_BAR_RISE = 24;
-const CART_SPACE = 76;
+const INSET = 6;
+const SPRING = {
+  damping: 26,
+  stiffness: 380,
+  mass: 0.65,
+  overshootClamping: true,
+  reduceMotion: ReduceMotion.System,
+} as const;
 const TABS = [
   { key: 'home', label: 'Home', icon: Home },
   { key: 'categories', label: 'Categories', icon: LayoutGrid },
@@ -139,27 +145,76 @@ export default function HomeBottomNav({
           onChange?.(tab.key);
         }}
       >
-        <View style={[s.tabContent, selected && s.selectedTab]}>
-          <View>
-            <Icon size={22} color={color} strokeWidth={selected ? 2.2 : 1.8} />
-            {badge > 0 ? (
-              <View style={s.badge}>
-                <Text style={s.badgeText}>{badge > 99 ? '99+' : badge}</Text>
-              </View>
-            ) : null}
-          </View>
-          <Text
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.85}
-            style={[s.label, { color, fontWeight: selected ? '600' : '400' }]}
-          >
-            {tab.label}
-          </Text>
-        </View>
-      </PressableScale>
-    );
-  };
+        <Animated.View style={iconStyle}>
+          <Icon size={23} color={color} strokeWidth={selected ? 2.2 : 1.8} />
+          {badge != null && badge > 0 && (
+            <View style={s.badge}>
+              <Text style={s.badgeText}>{badge > 99 ? '99+' : badge}</Text>
+            </View>
+          )}
+        </Animated.View>
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.85}
+          style={[s.label, { color, fontWeight: selected ? '600' : '400' }]}
+        >
+          {tab.label}
+        </Text>
+      </Pressable>
+    </GestureDetector>
+  );
+});
+
+/** Keep native blur and its target untouched when React updates tab labels. */
+const GlassBackdrop = memo(function GlassBackdrop({
+  blurTarget,
+}: Pick<Props, 'blurTarget'>) {
+  return (
+    <>
+      <BlurView
+        pointerEvents="none"
+        blurTarget={blurTarget}
+        blurMethod="dimezisBlurViewSdk31Plus"
+        blurReductionFactor={4}
+        tint={Platform.OS === 'ios' ? 'systemUltraThinMaterialLight' : 'light'}
+        intensity={45}
+        style={StyleSheet.absoluteFill}
+      />
+      <LinearGradient
+        pointerEvents="none"
+        colors={['#FFFFFF50', '#E4F5FF26', '#FFFFFF38']}
+        style={StyleSheet.absoluteFill}
+      />
+    </>
+  );
+});
+
+/** One persistent selector; only its transform moves between equally sized tabs. */
+export default function HomeBottomNav({ onChange, blurTarget, badges }: Props) {
+  const insets = useSafeAreaInsets();
+  const [width, setWidth] = useState(0);
+  const tabWidth = Math.max(0, (width - INSET * 2) / TABS.length);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const target = useSharedValue(0);
+  const position = useSharedValue(0);
+  // Gesture worklets start motion immediately. This callback updates only tab
+  // semantics/icons; Pressable also provides the accessibility activation path.
+  const select = useCallback(
+    (index: number) => {
+      if (target.value !== index) {
+        target.value = index;
+        position.value = withSpring(index, SPRING);
+      }
+      setSelectedIndex(previous => (previous === index ? previous : index));
+      onChange?.(TABS[index].key);
+    },
+    [onChange, position, target],
+  );
+  useEffect(() => () => cancelAnimation(position), [position]);
+  const indicatorStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: position.value * tabWidth }],
+  }));
   return (
     <View
       pointerEvents="box-none"
@@ -199,24 +254,34 @@ export default function HomeBottomNav({
           </PressableScale>
           <Text style={s.cartLabel}>Cart</Text>
         </View>
+        <View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFill,
+            { borderRadius: 34, borderWidth: 1, borderColor: '#FFFFFFA8' },
+          ]}
+        />
       </View>
     </View>
   );
 }
 const s = StyleSheet.create({
   dock: { position: 'absolute', left: 18, right: 18, alignItems: 'center' },
-  bar: { width: '100%', maxWidth: 600, height: TAB_BAR_HEIGHT },
-  backdrop: { borderRadius: 32, overflow: 'hidden' },
-  tabs: {
-    flexDirection: 'row',
-    height: TAB_BAR_HEIGHT,
-    paddingHorizontal: 6,
-    alignItems: 'center',
+  shadow: {
+    width: '100%',
+    maxWidth: 600,
+    borderRadius: 34,
+    shadowColor: '#345B73',
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 3,
   },
-  tab: { flex: 1, height: 64, justifyContent: 'center' },
-  tabContent: {
-    height: 56,
-    borderRadius: 25,
+  pill: {
+    height: TAB_BAR_HEIGHT,
+    borderRadius: 34,
+    overflow: 'hidden',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
@@ -246,8 +311,6 @@ const s = StyleSheet.create({
   cartFill: {
     flex: 1,
     borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#FFFFFFB3',
   },
