@@ -106,7 +106,8 @@ export default function VoiceOrderFlow({ visible, onClose }: Props) {
         navigation.navigate('Checkout', {
           source: 'voice',
           transcript: order.transcript,
-          missed: order.missed.length ? order.missed : undefined,
+          outOfStock: order.outOfStock.length ? order.outOfStock : undefined,
+          unclear: order.unclear.length ? order.unclear : undefined,
           recording: order.recording ?? undefined,
         }),
       );

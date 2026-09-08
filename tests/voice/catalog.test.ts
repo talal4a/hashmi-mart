@@ -329,3 +329,53 @@ describe('reading an order', () => {
     expect(read).toHaveLength(1);
   });
 });
+
+/**
+ * Understood, and not on the shelf.
+ *
+ * These two failures used to be one: an item we do not sell and a word we
+ * could not place both came back as an unmatched row saying "not sold here".
+ * They deserve different words because they call for different actions —
+ * saying the order again fixes a misheard word and will never conjure eggs —
+ * and telling a customer we did not understand them when we understood
+ * perfectly is the worse of the two mistakes.
+ */
+describe('items we know and do not sell', () => {
+  it('names an unstocked item rather than shrugging at it', () => {
+    const match = matchCatalog('anday');
+    expect(match.productId).toBeUndefined();
+    expect(match.unstocked).toBe('eggs');
+  });
+
+  it('names it from Urdu script too', () => {
+    expect(matchCatalog('انڈے').unstocked).toBe('eggs');
+  });
+
+  it('leaves a word it genuinely could not place unnamed', () => {
+    const match = matchCatalog('zzzqqq');
+    expect(match.productId).toBeUndefined();
+    expect(match.unstocked).toBeUndefined();
+    expect(match.confidence).toBe('low');
+  });
+
+  it('finds one inside a sentence, beside an item we do stock', () => {
+    const found = scanTranscript('مجھے کیلا اور انڈے چاہیے');
+    expect(found).toHaveLength(2);
+    expect(found[0].productId).toBe('banana');
+    expect(found[1].unstocked).toBe('eggs');
+    // No id, so nothing downstream can put it in a cart.
+    expect(found[1].productId).toBeUndefined();
+  });
+
+  it('never gives an unstocked item an id that could reach a cart', () => {
+    for (const match of scanTranscript('anday chawal aloo namak')) {
+      if (match.unstocked) expect(match.productId).toBeUndefined();
+    }
+  });
+
+  it('does not say the same shelf is empty twice', () => {
+    // The parse reported the eggs and the scan finds them again.
+    const read = readOrder('kela aur anday', [{ query: 'anday' }]);
+    expect(read.filter(match => match.unstocked === 'eggs')).toHaveLength(1);
+  });
+});

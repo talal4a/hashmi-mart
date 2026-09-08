@@ -61,6 +61,7 @@ const matched = (productId: string, name: string): CatalogMatch => ({
 
 beforeEach(() => {
   mockOrder.stage = 'review';
+  mockOrder.transcript = 'مجھے کیلا اور ٹماٹر چاہیے';
   mockOrder.matches = [];
   mockOrder.addable = [];
   mockOrder.reset.mockClear();
@@ -107,7 +108,7 @@ describe('the voice sheet', () => {
   it('does not hand over an order it could not match', async () => {
     const onConfirm = jest.fn();
     mockOrder.matches = [
-      { query: 'anday', quantity: 1, confidence: 'low' },
+      { query: 'anday', quantity: 1, confidence: 'low', unstocked: 'eggs' },
     ];
 
     const view = await render(
@@ -118,10 +119,54 @@ describe('the voice sheet', () => {
     });
 
     expect(onConfirm).not.toHaveBeenCalled();
+    // Saying it again is offered first, because it is the repair that works.
+    expect(view.queryByLabelText('Record your order again')).toBeTruthy();
     // The recording is still a complete order on its own.
     expect(
       view.queryByLabelText('Send voice order to the store'),
     ).toBeTruthy();
+  });
+
+  it('says the shelf is empty, not that it misheard', async () => {
+    mockOrder.matches = [
+      { query: 'anday', quantity: 1, confidence: 'low', unstocked: 'eggs' },
+    ];
+
+    const view = await render(
+      <VoiceOrderSheet visible onClose={jest.fn()} onConfirm={jest.fn()} />,
+    );
+
+    // We understood perfectly. Telling this customer we did not catch them is
+    // the worse of the two mistakes.
+    expect(view.queryByText('Out of stock right now')).toBeTruthy();
+    // Said in the headline and again on the row itself, so it is clear which
+    // of the items was the problem.
+    expect(view.queryAllByText(/don't sell eggs yet/).length).toBe(2);
+    expect(view.queryByText(/couldn't make/i)).toBeNull();
+  });
+
+  it('asks for the order again when it could not place the words', async () => {
+    mockOrder.matches = [
+      { query: 'zzzqqq', quantity: 1, confidence: 'low' },
+    ];
+
+    const view = await render(
+      <VoiceOrderSheet visible onClose={jest.fn()} onConfirm={jest.fn()} />,
+    );
+
+    expect(view.queryByText("We didn't catch that")).toBeTruthy();
+    expect(view.queryByText(/Say the item names on their own/)).toBeTruthy();
+  });
+
+  it('says it heard nothing at all when the recording was silent', async () => {
+    mockOrder.transcript = '';
+    mockOrder.matches = [];
+
+    const view = await render(
+      <VoiceOrderSheet visible onClose={jest.fn()} onConfirm={jest.fn()} />,
+    );
+
+    expect(view.queryByText("We couldn't hear anything")).toBeTruthy();
   });
 
   it('drops the handover when the sheet is closed first', async () => {

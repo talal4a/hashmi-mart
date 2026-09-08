@@ -28,8 +28,12 @@ export type RootStackParamList = {
     | {
         source?: 'voice' | 'browse';
         transcript?: string | null;
-        /** Spoken items we do not stock, so checkout can say so. */
-        missed?: string[];
+        /**
+         * Why something the customer said is not in the order — kept as two
+         * lists because they are two different pieces of news.
+         */
+        outOfStock?: string[];
+        unclear?: string[];
         /** The local recording, so checkout can play back what was said. */
         recording?: { uri: string; durationMs: number };
       }
