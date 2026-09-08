@@ -52,8 +52,6 @@ export default function VoiceOrderSheet({ visible, onClose, onAddToCart }: Props
   const recorder = useVoiceRecorder();
   const order = useVoiceOrder();
 
-  useEffect(() => order.dispose, [order.dispose]);
-
   // Opening the sheet starts listening. Tapping a microphone and then having to
   // tap another one is a step nobody wants.
   useEffect(() => {

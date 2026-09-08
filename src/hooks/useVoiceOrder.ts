@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { SupportError, supportErrorMessage } from '../services/supportService';
 import {
   matchOrder,
@@ -60,7 +60,28 @@ const EMPTY: VoiceOrderState = {
 export default function useVoiceOrder() {
   const [state, setState] = useState<VoiceOrderState>(EMPTY);
   const recording = useRef<Recording | null>(null);
+
+  /**
+   * Whether late responses may still set state.
+   *
+   * Owned here rather than exposed for the screen to call, which is how this
+   * broke: `dispose` was a fresh function every render, so a caller wiring it
+   * up as `useEffect(() => order.dispose, [order.dispose])` re-ran the effect
+   * on every render and fired the *previous* cleanup each time. The flag went
+   * false immediately after the first state change, every update after it was
+   * dropped, and the sheet sat on "Listening to your order…" for ever with no
+   * error and nothing in the logs.
+   *
+   * A lifecycle that only the hook can get wrong is a lifecycle only the hook
+   * has to get right.
+   */
   const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const reset = useCallback(() => {
     recording.current = null;
@@ -194,9 +215,5 @@ export default function useVoiceOrder() {
     setQuantity,
     sendToStore,
     reset,
-    /** Called on unmount so a late response cannot set state on a dead sheet. */
-    dispose: () => {
-      mounted.current = false;
-    },
   };
 }

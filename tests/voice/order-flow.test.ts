@@ -152,3 +152,64 @@ describe('voice order', () => {
     expect(result.current.confidence).toBe('low');
   });
 });
+
+/**
+ * The stuck-on-"Listening" regression.
+ *
+ * `dispose` was a fresh function every render, so a caller wiring it up as
+ * `useEffect(() => order.dispose, [order.dispose])` re-ran the effect on every
+ * render and fired the previous cleanup each time. The mounted flag went false
+ * immediately after the first state change, every update after it was dropped,
+ * and the sheet sat on "Listening to your order…" for ever — no error, nothing
+ * in the logs, no way out but closing the sheet and losing the recording.
+ *
+ * Silent stalls do not announce themselves, so this pins the thing that was
+ * actually observable: the stage has to move.
+ */
+describe('the sheet does not stall', () => {
+  it('leaves the listening stage once transcription answers', async () => {
+    mocked.transcribeOrder.mockResolvedValue('tamatar');
+    mocked.parseOrder.mockResolvedValue({ items: [{ query: 'tamatar' }] });
+
+    const { result } = await renderHook(() => useVoiceOrder());
+    await act(async () => {
+      await result.current.interpret(recording);
+    });
+
+    await waitFor(() => expect(result.current.stage).not.toBe('transcribing'));
+    await waitFor(() => expect(result.current.stage).toBe('review'));
+  });
+
+  it('leaves the listening stage even when transcription fails', async () => {
+    // A failure that never reaches the UI is indistinguishable from a hang.
+    mocked.transcribeOrder.mockRejectedValue(new SupportError('timeout'));
+
+    const { result } = await renderHook(() => useVoiceOrder());
+    await act(async () => {
+      await result.current.interpret(recording);
+    });
+
+    await waitFor(() => expect(result.current.stage).toBe('review'));
+    expect(result.current.error).toBeTruthy();
+  });
+
+  it('survives repeated renders without silencing its own updates', async () => {
+    mocked.transcribeOrder.mockResolvedValue('tamatar');
+    mocked.parseOrder.mockResolvedValue({ items: [{ query: 'tamatar' }] });
+
+    const { result, rerender } = await renderHook(() => useVoiceOrder());
+    // The sheet re-renders constantly while the waveform animates. Any of those
+    // renders used to be enough to kill every later state change.
+    await act(async () => {
+      await rerender({});
+      await rerender({});
+      await rerender({});
+    });
+    await act(async () => {
+      await result.current.interpret(recording);
+    });
+
+    await waitFor(() => expect(result.current.stage).toBe('review'));
+    expect(result.current.matches).toHaveLength(1);
+  });
+});
