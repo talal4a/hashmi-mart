@@ -147,9 +147,16 @@ export default function HomeBottomNav({
         >
           <Defs>
             <SvgGradient id="navSurface" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.94} />
-              <Stop offset="0.55" stopColor="#F4FBFF" stopOpacity={0.9} />
-              <Stop offset="1" stopColor="#E6F4FD" stopOpacity={0.88} />
+              {/*
+                Near-opaque on purpose. At 0.9 the page still reads through the
+                bar — vendor names and section headings were legible behind the
+                tabs, which turns the bottom of the screen into two competing
+                layers. Glass should say "there is something behind this", not
+                let you read it.
+              */}
+              <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.985} />
+              <Stop offset="0.55" stopColor="#F6FCFF" stopOpacity={0.97} />
+              <Stop offset="1" stopColor="#E4F3FC" stopOpacity={0.96} />
             </SvgGradient>
           </Defs>
           <Path
