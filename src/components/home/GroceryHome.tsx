@@ -131,88 +131,98 @@ export function WhatsAppButton({ style }: { style?: StyleProp<ViewStyle> }) {
   );
 }
 const waveform = [12, 22, 36, 23, 13, 8, 18, 28, 38, 25, 13, 8, 18, 30, 19, 11];
-export function VoiceOrderCard() {
+export function VoiceOrderCard({ onPress }: { onPress?: () => void }) {
   const { width } = useWindowDimensions();
   const { phase, micStyle } = useVoiceHeartbeat();
   const compact = width < 360;
   const micSize = compact ? 54 : 64;
   const stageWidth = Math.min(160, width * 0.29);
   return (
-    <LinearGradient
-      colors={['#F5FCFF', '#E9FAFF', '#F7FDFF']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={s.voice}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Voice order. Say what you need and we will add it to your cart"
+      onPress={onPress}
     >
-      <View style={s.voiceCopy}>
-        <Text style={[s.voiceTitle, compact && { fontSize: 17 }]}>
-          Voice Order
-        </Text>
-        <View style={s.voiceDescriptionRow}>
-          <VoiceOrderCopy />
-          <View style={s.voiceArrow}>
-            <ChevronRight size={17} color="#05B8F2" />
+      <LinearGradient
+        colors={['#F5FCFF', '#E9FAFF', '#F7FDFF']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={s.voice}
+      >
+        <View style={s.voiceCopy}>
+          <Text style={[s.voiceTitle, compact && { fontSize: 17 }]}>
+            Voice Order
+          </Text>
+          <View style={s.voiceDescriptionRow}>
+            <VoiceOrderCopy />
+            <View style={s.voiceArrow}>
+              <ChevronRight size={17} color="#05B8F2" />
+            </View>
           </View>
         </View>
-      </View>
-      <View style={[s.voiceStage, { width: stageWidth }]}>
-        <View pointerEvents="none" style={s.voiceWave}>
-          {waveform.map((height, i) => (
-            <HeartbeatBar
-              key={i}
-              phase={phase}
-              index={i}
-              count={waveform.length}
-              height={height}
-              color="#BAEEFD"
-            />
-          ))}
-        </View>
-        <View
-          style={[
-            s.voiceHalo,
-            { width: micSize + 22, height: micSize + 22, borderRadius: 60 },
-          ]}
-        >
+        <View style={[s.voiceStage, { width: stageWidth }]}>
+          <View pointerEvents="none" style={s.voiceWave}>
+            {waveform.map((height, i) => (
+              <HeartbeatBar
+                key={i}
+                phase={phase}
+                index={i}
+                count={waveform.length}
+                height={height}
+                color="#BAEEFD"
+              />
+            ))}
+          </View>
           <View
             style={[
-              s.voiceInnerHalo,
-              { width: micSize + 12, height: micSize + 12, borderRadius: 50 },
+              s.voiceHalo,
+              { width: micSize + 22, height: micSize + 22, borderRadius: 60 },
             ]}
           >
-            <HeartbeatRing phase={phase} />
-            <HeartbeatRing phase={phase} delay={0.035} />
-            <Animated.View
+            <View
               style={[
-                s.voiceMic,
-                { width: micSize, height: micSize, borderRadius: micSize / 2 },
-                micStyle,
+                s.voiceInnerHalo,
+                { width: micSize + 12, height: micSize + 12, borderRadius: 50 },
               ]}
             >
-              <Mic size={compact ? 25 : 29} color="white" strokeWidth={2.6} />
-            </Animated.View>
+              <HeartbeatRing phase={phase} />
+              <HeartbeatRing phase={phase} delay={0.035} />
+              <Animated.View
+                style={[
+                  s.voiceMic,
+                  {
+                    width: micSize,
+                    height: micSize,
+                    borderRadius: micSize / 2,
+                  },
+                  micStyle,
+                ]}
+              >
+                <Mic size={compact ? 25 : 29} color="white" strokeWidth={2.6} />
+              </Animated.View>
+            </View>
           </View>
         </View>
-      </View>
-      <View style={s.voiceNote}>
-        <Text style={s.handwriting}>Try saying{'\n'}“Add milk”</Text>
-        <Svg
-          width={32}
-          height={30}
-          viewBox="0 0 32 30"
-          style={{ marginTop: 3 }}
-        >
-          <Path
-            d="M26 2 C27 15 20 24 6 24 M6 24 L11 19 M6 24 L12 28"
-            fill="none"
-            stroke="#718596"
-            strokeWidth={1.3}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </Svg>
-      </View>
-    </LinearGradient>
+        <View style={s.voiceNote}>
+          <Text style={s.handwriting}>Try saying{'\n'}“Add milk”</Text>
+          <Svg
+            width={32}
+            height={30}
+            viewBox="0 0 32 30"
+            style={{ marginTop: 3 }}
+          >
+            <Path
+              d="M26 2 C27 15 20 24 6 24 M6 24 L11 19 M6 24 L12 28"
+              fill="none"
+              stroke="#718596"
+              strokeWidth={1.3}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
+        </View>
+      </LinearGradient>
+    </Pressable>
   );
 }
 export function HeroBanner() {
