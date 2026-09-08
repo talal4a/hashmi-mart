@@ -1,6 +1,5 @@
 import { useState, type RefObject } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, {
   Defs,
@@ -8,30 +7,35 @@ import Svg, {
   Path,
   Stop,
 } from 'react-native-svg';
-import {
-  ClipboardList,
-  Home,
-  LayoutGrid,
-  ShoppingCart,
-  User,
-} from 'lucide-react-native';
+import { ClipboardList, Home, LayoutGrid, User } from 'lucide-react-native';
 import PressableScale from '../ui/PressableScale';
+import CartTab, { CART_RISE } from './CartTab';
 import { grocery } from './groceryTheme';
 
 export const TAB_BAR_HEIGHT = 72;
 export const TAB_BAR_GAP = 12;
 
-export const TAB_BAR_RISE = 26;
+/** The cart owns this; re-exported so Home has one number to space against. */
+export const TAB_BAR_RISE = CART_RISE;
 
-const CART_SIZE = 58;
-
-const CART_SPACE = 108;
+/**
+ * Width reserved for the cart. Matched to the notch mouth so no tab pill can be
+ * drawn half over the cutout, and close enough to a normal tab's width that the
+ * five slots still read as evenly spaced.
+ */
+const CART_SPACE = 100;
 
 const R = 28;
 
-const NOTCH_HALF = 54;
+const NOTCH_HALF = 50;
 
-const NOTCH_DEPTH = 40;
+/**
+ * Shallower than before, because the cart is smaller and sits lower. A 40-deep
+ * cutout under a model that rises 14px above the bar is a hole with nothing in
+ * it; 22 keeps a visible cradle and leaves the pedestal — not the cutout — as
+ * what the cart stands on.
+ */
+const NOTCH_DEPTH = 22;
 
 function silhouette(width: number): string {
   const cx = width / 2;
@@ -39,8 +43,8 @@ function silhouette(width: number): string {
   return [
     `M ${R} 0`,
     `H ${cx - NOTCH_HALF}`,
-    `C ${cx - 36} 0 ${cx - 42} ${NOTCH_DEPTH} ${cx} ${NOTCH_DEPTH}`,
-    `C ${cx + 42} ${NOTCH_DEPTH} ${cx + 36} 0 ${cx + NOTCH_HALF} 0`,
+    `C ${cx - 32} 0 ${cx - 38} ${NOTCH_DEPTH} ${cx} ${NOTCH_DEPTH}`,
+    `C ${cx + 38} ${NOTCH_DEPTH} ${cx + 32} 0 ${cx + NOTCH_HALF} 0`,
     `H ${width - R}`,
     `Q ${width} 0 ${width} ${R}`,
     `V ${H - R}`,
@@ -60,7 +64,7 @@ const TABS = [
   { key: 'profile', label: 'Profile', icon: User },
 ] as const;
 
-export type HomeTab = (typeof TABS)[number]['key'];
+export type HomeTab = (typeof TABS)[number]['key'] | 'cart';
 
 type Props = {
   onChange?: (tab: HomeTab) => void;
@@ -165,31 +169,14 @@ export default function HomeBottomNav({
         </View>
 
         <View pointerEvents="box-none" style={s.cartSlot}>
-          <PressableScale
-            accessibilityRole="button"
-            accessibilityLabel={`Open cart, ${cartCount} ${cartCount === 1 ? 'item' : 'items'}`}
-            testID="home-cart"
-            onPress={onOpenCart}
-            scaleTo={0.94}
-            style={s.cartButton}
-          >
-            <LinearGradient
-              colors={['#3FCBFA', '#0A96D8']}
-              start={{ x: 0.2, y: 0 }}
-              end={{ x: 0.8, y: 1 }}
-              style={s.cartFill}
-            >
-              <ShoppingCart size={24} color="#FFFFFF" strokeWidth={2.1} />
-            </LinearGradient>
-            {cartCount > 0 ? (
-              <View style={s.cartBadge}>
-                <Text style={s.cartBadgeText}>
-                  {cartCount > 99 ? '99+' : cartCount}
-                </Text>
-              </View>
-            ) : null}
-          </PressableScale>
-          <Text style={s.cartLabel}>Cart</Text>
+          <CartTab
+            count={cartCount}
+            active={active === 'cart'}
+            onPress={() => {
+              setActive('cart');
+              onOpenCart();
+            }}
+          />
         </View>
       </View>
     </View>
@@ -232,49 +219,6 @@ const s = StyleSheet.create({
     top: -TAB_BAR_RISE,
     alignItems: 'center',
   },
-  cartButton: {
-    width: CART_SIZE,
-    height: CART_SIZE,
-    borderRadius: CART_SIZE / 2,
-    // The rim that separates the button from the cradle behind it.
-    backgroundColor: '#FFFFFF',
-    padding: 3,
-    shadowColor: '#0B6E97',
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 9,
-  },
-  cartFill: {
-    flex: 1,
-    borderRadius: CART_SIZE / 2 - 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cartLabel: {
-    // Clears NOTCH_DEPTH (40) from the cart's base (32): any less and the top
-    // of the text sits over the transparent cutout.
-    marginTop: 10,
-    color: '#127BA5',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: -0.1,
-  },
-  cartBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -3,
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    paddingHorizontal: 4,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#C4ECFA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cartBadgeText: { fontSize: 10, fontWeight: '700', color: '#087FAD' },
   badge: {
     position: 'absolute',
     top: -6,

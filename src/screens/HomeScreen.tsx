@@ -66,12 +66,16 @@ export default function HomeScreen() {
             s.content,
             {
               paddingTop: insets.top + 12,
+              // The bar floats over the page, so the page has to end above it:
+              // its height, the cart's protrusion, the gap under the dock, the
+              // home indicator, and then real breathing room. 24 left cards
+              // crowding the bar; 40 is a clear band.
               paddingBottom:
                 TAB_BAR_HEIGHT +
                 TAB_BAR_RISE +
                 insets.bottom +
                 TAB_BAR_GAP +
-                24,
+                40,
             },
           ]}
         >
