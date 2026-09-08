@@ -88,6 +88,12 @@ const NO_FLIGHT: CartFlightValue = {
 /** Long enough to read as travel, short enough not to delay the next tap. */
 const DURATION = 460;
 
+/**
+ * Exported so a caller that sends several items knows when the last one has
+ * landed. Voice order waits for it before moving on to checkout.
+ */
+export const FLIGHT_DURATION = DURATION;
+
 type Flight = FlightRequest & { id: number; to: CartTarget };
 
 export function CartFlightProvider({ children }: { children: ReactNode }) {
