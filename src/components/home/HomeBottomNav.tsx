@@ -21,14 +21,12 @@ import { grocery } from './groceryTheme';
 
 export const TAB_BAR_HEIGHT = 72;
 export const TAB_BAR_GAP = 12;
-const INSET = 6;
-const SPRING = {
-  damping: 26,
-  stiffness: 380,
-  mass: 0.65,
-  overshootClamping: true,
-  reduceMotion: ReduceMotion.System,
-} as const;
+export const TAB_BAR_RISE = 24;
+const CART_SPACE = 76;
+
+/** Matches the corner radius baked into the `contour` path's Q curves below. */
+const BAR_RADIUS = 32;
+
 const TABS = [
   { key: 'home', label: 'Home', icon: Home },
   { key: 'categories', label: 'Categories', icon: LayoutGrid },
@@ -44,8 +42,32 @@ type Props = {
   badges?: Partial<Record<HomeTab, number>>;
 };
 
-// The notch is transparent, not a canvas-colored disc covering the glass.
-// Blur is confined to the wings and lower bridge so it never fills the cutout.
+/**
+ * The bar's frosted surface, drawn as one silhouette.
+ *
+ * The blur is a single rectangle covering the whole bar, with the contour path
+ * painted over it. It used to be three rectangles — left wing, right wing, and
+ * a bridge starting at y=34 — arranged to keep the blur out of the notch. That
+ * left a gap the shape of the problem: the contour dips from y=1 at the edges
+ * of the cutout down to y=34 at the centre, so between the curve and the
+ * bridge's flat top there were two crescents, 33px tall at their widest, that
+ * had the glass fill over them but no blur behind. Sharp photo through a thin
+ * white film on either side of the cart, blurred photo through the same film
+ * everywhere else — the difference read as the curve being a different colour
+ * from the rest of the bar.
+ *
+ * A rectangle cannot follow a curved edge, and stacking more rectangles only
+ * makes the seam smaller, never straight. Blurring the whole bar and letting
+ * the path decide where the glass *fill* goes removes the mismatch entirely,
+ * and costs one native blur pass instead of three.
+ *
+ * The trade-off is that the cutout is no longer see-through: it shows blurred
+ * background rather than the page itself. Around a cart button that covers most
+ * of it, that reads as the glass dipping — which is the intent. A true
+ * transparent hole needs the blur masked to the path
+ * (`@react-native-masked-view/masked-view`), which is a native dependency and a
+ * rebuild; worth it only if the cutout has to be genuinely clear.
+ */
 const GlassBackdrop = memo(function GlassBackdrop({
   width,
   blurTarget,
@@ -55,47 +77,25 @@ const GlassBackdrop = memo(function GlassBackdrop({
 }) {
   const middle = width / 2;
   const contour = `M32 1 H${middle - 48} C${middle - 35} 1 ${middle - 38} 34 ${middle} 34 C${middle + 38} 34 ${middle + 35} 1 ${middle + 48} 1 H${width - 32} Q${width - 1} 1 ${width - 1} 32 V40 Q${width - 1} 71 ${width - 32} 71 H32 Q1 71 1 40 V32 Q1 1 32 1 Z`;
-  const blur = {
-    blurTarget,
-    blurMethod: 'dimezisBlurViewSdk31Plus' as const,
-    blurReductionFactor: 4,
-    tint:
-      Platform.OS === 'ios'
-        ? ('systemUltraThinMaterialLight' as const)
-        : ('light' as const),
-    intensity: 45,
-  };
+
   return (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, s.backdrop]}>
+      {/*
+        Rounded on the view itself, not just on the parent. On Android
+        `dimezisBlurViewSdk31Plus` is a real native view doing a
+        hardware-accelerated pass and it ignores an ancestor's `overflow:
+        hidden`, so without this it paints square into the corners.
+      */}
       <BlurView
-        {...blur}
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: Math.max(0, middle - 48),
-        }}
-      />
-      <BlurView
-        {...blur}
-        style={{
-          position: 'absolute',
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: Math.max(0, middle - 48),
-        }}
-      />
-      <BlurView
-        {...blur}
-        style={{
-          position: 'absolute',
-          left: middle - 48,
-          top: 34,
-          bottom: 0,
-          width: 96,
-        }}
+        blurTarget={blurTarget}
+        blurMethod="dimezisBlurViewSdk31Plus"
+        blurReductionFactor={4}
+        tint={Platform.OS === 'ios' ? 'systemUltraThinMaterialLight' : 'light'}
+        intensity={45}
+        style={[
+          StyleSheet.absoluteFill,
+          { borderRadius: BAR_RADIUS, overflow: 'hidden' },
+        ]}
       />
       <Svg width={width} height={TAB_BAR_HEIGHT}>
         <Defs>
@@ -126,6 +126,7 @@ export default function HomeBottomNav({
   const insets = useSafeAreaInsets();
   const [width, setWidth] = useState(0);
   const [active, setActive] = useState<HomeTab>('home');
+
   const renderTab = (tab: (typeof TABS)[number]) => {
     const selected = active === tab.key;
     const Icon = tab.icon;
@@ -145,76 +146,28 @@ export default function HomeBottomNav({
           onChange?.(tab.key);
         }}
       >
-        <Animated.View style={iconStyle}>
-          <Icon size={23} color={color} strokeWidth={selected ? 2.2 : 1.8} />
-          {badge != null && badge > 0 && (
-            <View style={s.badge}>
-              <Text style={s.badgeText}>{badge > 99 ? '99+' : badge}</Text>
-            </View>
-          )}
-        </Animated.View>
-        <Text
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.85}
-          style={[s.label, { color, fontWeight: selected ? '600' : '400' }]}
-        >
-          {tab.label}
-        </Text>
-      </Pressable>
-    </GestureDetector>
-  );
-});
+        <View style={[s.tabContent, selected && s.selectedTab]}>
+          <View>
+            <Icon size={22} color={color} strokeWidth={selected ? 2.2 : 1.8} />
+            {badge > 0 ? (
+              <View style={s.badge}>
+                <Text style={s.badgeText}>{badge > 99 ? '99+' : badge}</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+            style={[s.label, { color, fontWeight: selected ? '600' : '400' }]}
+          >
+            {tab.label}
+          </Text>
+        </View>
+      </PressableScale>
+    );
+  };
 
-/** Keep native blur and its target untouched when React updates tab labels. */
-const GlassBackdrop = memo(function GlassBackdrop({
-  blurTarget,
-}: Pick<Props, 'blurTarget'>) {
-  return (
-    <>
-      <BlurView
-        pointerEvents="none"
-        blurTarget={blurTarget}
-        blurMethod="dimezisBlurViewSdk31Plus"
-        blurReductionFactor={4}
-        tint={Platform.OS === 'ios' ? 'systemUltraThinMaterialLight' : 'light'}
-        intensity={45}
-        style={StyleSheet.absoluteFill}
-      />
-      <LinearGradient
-        pointerEvents="none"
-        colors={['#FFFFFF50', '#E4F5FF26', '#FFFFFF38']}
-        style={StyleSheet.absoluteFill}
-      />
-    </>
-  );
-});
-
-/** One persistent selector; only its transform moves between equally sized tabs. */
-export default function HomeBottomNav({ onChange, blurTarget, badges }: Props) {
-  const insets = useSafeAreaInsets();
-  const [width, setWidth] = useState(0);
-  const tabWidth = Math.max(0, (width - INSET * 2) / TABS.length);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const target = useSharedValue(0);
-  const position = useSharedValue(0);
-  // Gesture worklets start motion immediately. This callback updates only tab
-  // semantics/icons; Pressable also provides the accessibility activation path.
-  const select = useCallback(
-    (index: number) => {
-      if (target.value !== index) {
-        target.value = index;
-        position.value = withSpring(index, SPRING);
-      }
-      setSelectedIndex(previous => (previous === index ? previous : index));
-      onChange?.(TABS[index].key);
-    },
-    [onChange, position, target],
-  );
-  useEffect(() => () => cancelAnimation(position), [position]);
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: position.value * tabWidth }],
-  }));
   return (
     <View
       pointerEvents="box-none"
@@ -254,34 +207,25 @@ export default function HomeBottomNav({ onChange, blurTarget, badges }: Props) {
           </PressableScale>
           <Text style={s.cartLabel}>Cart</Text>
         </View>
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFill,
-            { borderRadius: 34, borderWidth: 1, borderColor: '#FFFFFFA8' },
-          ]}
-        />
       </View>
     </View>
   );
 }
+
 const s = StyleSheet.create({
   dock: { position: 'absolute', left: 18, right: 18, alignItems: 'center' },
-  shadow: {
-    width: '100%',
-    maxWidth: 600,
-    borderRadius: 34,
-    shadowColor: '#345B73',
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 3,
-  },
-  pill: {
-    height: TAB_BAR_HEIGHT,
-    borderRadius: 34,
-    overflow: 'hidden',
+  bar: { width: '100%', maxWidth: 600, height: TAB_BAR_HEIGHT },
+  backdrop: { borderRadius: BAR_RADIUS, overflow: 'hidden' },
+  tabs: {
     flexDirection: 'row',
+    height: TAB_BAR_HEIGHT,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+  },
+  tab: { flex: 1, height: 64, justifyContent: 'center' },
+  tabContent: {
+    height: 56,
+    borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
@@ -311,6 +255,8 @@ const s = StyleSheet.create({
   cartFill: {
     flex: 1,
     borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#FFFFFFB3',
   },
