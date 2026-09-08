@@ -349,6 +349,150 @@ export function matchCatalog(
   return { ...base, confidence: 'low' };
 }
 
+/* -------------------------------------------------------------------------- */
+/* Reading the sentence itself                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How far back from a product word a quantity may sit.
+ *
+ * "do kilo tamatar" is two words; "mujhe do kilo tamatar" is three. Beyond
+ * that a number belongs to something else in the sentence, and reaching for it
+ * is how one item's quantity ends up on another.
+ */
+const QUANTITY_LOOKBACK = 3;
+
+function quantityBefore(
+  words: readonly string[],
+  at: number,
+  taken: ReadonlySet<number>,
+): { quantity: number; unit?: string } | null {
+  for (let i = at - 1; i >= 0 && i >= at - QUANTITY_LOOKBACK; i -= 1) {
+    // Another product's own word. Whatever is behind it is that item's
+    // quantity, not this one's.
+    if (taken.has(i)) return null;
+    const word = words[i];
+    const fraction = FOLDED_FRACTIONS.get(word);
+    if (fraction) return fraction;
+    const spoken = FOLDED_NUMBERS.get(word);
+    if (spoken !== undefined) return { quantity: spoken };
+    const digits = Number(word);
+    if (Number.isFinite(digits) && digits > 0 && digits <= 99) {
+      return { quantity: digits };
+    }
+  }
+  return null;
+}
+
+/**
+ * Finds every product named anywhere in a spoken sentence.
+ *
+ * `matchCatalog` answers "which product is this phrase", which is the right
+ * question for a list the model has already split up and the wrong one for a
+ * sentence: asked about "کیلا اور ٹماٹر" it returns tomatoes, and the bananas
+ * are simply gone. One phrase, one answer.
+ *
+ * This walks the words instead and takes every product it passes, which is
+ * what makes it usable as a floor under the model. When the parse comes back
+ * empty — a Groq outage, an exhausted quota, a malformed answer, a sentence it
+ * declined to split — the customer's own words still contain "کیلا" and
+ * "ٹماٹر", and the catalogue has known both all along. Nothing found was the
+ * one outcome that was never true.
+ *
+ * Exact words only, then fuzzy for what is left. A sentence is long enough
+ * that a loose match somewhere in it is nearly guaranteed, so the loose pass
+ * runs only against products the exact pass did not already find, and never
+ * returns 'high'.
+ */
+export function scanTranscript(transcript: string): CatalogMatch[] {
+  const text = normalise(transcript);
+  if (!text) return [];
+  const words = text.split(' ').filter(Boolean);
+
+  type Hit = { entry: CatalogEntry; at: number; said: string; confidence: MatchConfidence };
+  const hits: Hit[] = [];
+  // One hit per product. "tamatar ... tamatar" is one person saying the same
+  // thing twice, not two separate items.
+  const found = new Set<string>();
+
+  for (let i = 0; i < words.length; i += 1) {
+    const pair = i + 1 < words.length ? `${words[i]} ${words[i + 1]}` : null;
+    for (const entry of CATALOG) {
+      if (found.has(entry.id)) continue;
+      // Two-word aliases first, so "double roti" is not read as "roti".
+      if (pair && entry.aliases.includes(pair)) {
+        hits.push({ entry, at: i, said: pair, confidence: 'high' });
+        found.add(entry.id);
+        break;
+      }
+      if (entry.aliases.includes(words[i])) {
+        hits.push({ entry, at: i, said: words[i], confidence: 'high' });
+        found.add(entry.id);
+        break;
+      }
+    }
+  }
+
+  for (let i = 0; i < words.length; i += 1) {
+    const word = words[i];
+    if (word.length < 4) continue;
+    for (const entry of CATALOG) {
+      if (found.has(entry.id)) continue;
+      const near = entry.aliases.some(
+        alias => alias.length >= 4 && isNearMiss(word, alias),
+      );
+      if (near) {
+        hits.push({ entry, at: i, said: word, confidence: 'medium' });
+        found.add(entry.id);
+        break;
+      }
+    }
+  }
+
+  // Back into the order they were said in, so the cart fills the way the
+  // sentence ran.
+  hits.sort((a, b) => a.at - b.at);
+  const taken = new Set(hits.map(hit => hit.at));
+
+  return hits.map(hit => {
+    const read = quantityBefore(words, hit.at, taken);
+    return {
+      query: hit.said,
+      productId: hit.entry.id,
+      productName: hit.entry.name,
+      quantity: read?.quantity ?? 1,
+      unit: read?.unit,
+      confidence: hit.confidence,
+    };
+  });
+}
+
+/**
+ * The model's reading of the order, with the sentence as a floor under it.
+ *
+ * Neither source is trusted alone. The parse knows how to split a sentence and
+ * which number belongs to which item, and it is also the part that can return
+ * nothing at all — so anything it missed but the customer plainly said is
+ * added from the scan, and its own items keep their quantities.
+ *
+ * Unmatched items from the parse are kept. "Heard, but not sold here" is
+ * information the customer needs, and it is the one thing the scan cannot
+ * report: it only ever finds things that are on the shelf.
+ */
+export function readOrder(
+  transcript: string,
+  items: readonly { query: string; quantity?: number; unit?: string }[],
+): CatalogMatch[] {
+  const parsed = matchOrder(items);
+  const already = new Set(
+    parsed.map(match => match.productId).filter(Boolean) as string[],
+  );
+  const missed = scanTranscript(transcript).filter(
+    match => !already.has(match.productId!),
+  );
+  return [...parsed, ...missed];
+}
+
 /** Matches a whole parsed order. */
 export function matchOrder(
   items: readonly { query: string; quantity?: number; unit?: string }[],

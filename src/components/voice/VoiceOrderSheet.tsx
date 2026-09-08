@@ -64,7 +64,12 @@ type Props = {
    * Modal is its own window, drawn above the flight layer, so anything launched
    * while this sheet is up would travel behind it.
    */
-  onConfirm: (items: ConfirmedVoiceItem[], transcript: string | null) => void;
+  onConfirm: (
+    items: ConfirmedVoiceItem[],
+    transcript: string | null,
+    /** Things that were asked for and are not on the shelf. */
+    missed: string[],
+  ) => void;
 };
 
 export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) {
@@ -89,11 +94,26 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
+  /**
+   * The pending auto-confirm, so closing the sheet cancels it.
+   *
+   * Without this, tapping X during the moment the matches are on screen still
+   * fills the cart and opens checkout a beat later — from a screen the customer
+   * has already dismissed.
+   */
+  const handover = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelHandover = useCallback(() => {
+    if (handover.current) clearTimeout(handover.current);
+    handover.current = null;
+  }, []);
+
   const close = useCallback(() => {
+    cancelHandover();
     void recorder.cancel();
     order.reset();
     onClose();
-  }, [recorder, order, onClose]);
+  }, [cancelHandover, recorder, order, onClose]);
 
   const finish = useCallback(async () => {
     const result = await recorder.stop();
@@ -143,15 +163,50 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
           : undefined,
       };
     });
+    cancelHandover();
     tapHandoff();
     // Read before the reset below wipes it. Checkout shows it back, so the
     // shopkeeper and the customer are looking at the same sentence when the
     // items were matched out of Urdu or Punjabi.
     const transcript = order.transcript || null;
+    // Carried rather than dropped. The sheet is only up for a moment now, so
+    // an item we cannot sell has to be said somewhere the customer will
+    // actually read it — otherwise the order simply arrives short.
+    const missed = order.matches
+      .filter(match => !match.productId)
+      .map(match => match.query);
     void recorder.cancel();
     order.reset();
-    onConfirm(items, transcript);
-  }, [order, recorder, onConfirm]);
+    onConfirm(items, transcript, missed);
+  }, [order, recorder, onConfirm, cancelHandover]);
+
+  /**
+   * Found items go to the cart on their own.
+   *
+   * There used to be a Confirm button here, and a customer who had already
+   * said what they wanted had to say it again by tapping. Worse, when the
+   * matching came back empty the only button left was "Send voice to store",
+   * so an order the app could have filled ended on a screen promising a phone
+   * call back — which is not what anyone asked for by speaking into a grocery
+   * app.
+   *
+   * The pause before the handover is not hesitation. The matches are on screen
+   * for a moment so the customer sees what was understood, which matters most
+   * for Urdu and Punjabi, and the rows use it to measure themselves so each
+   * item's flight leaves from the row it is drawn in. Nothing is being decided
+   * in it: the real review is checkout, where the transcript sits above the
+   * items and every quantity is still editable.
+   */
+  useEffect(() => {
+    if (order.stage !== 'review' || order.addable.length === 0) return;
+    if (handover.current) return;
+    handover.current = setTimeout(confirmAll, HANDOVER_DELAY_MS);
+  }, [order.stage, order.addable.length, confirmAll]);
+
+  // A sheet reopened after a handover must not still be holding the old one.
+  useEffect(() => {
+    if (!visible) cancelHandover();
+  }, [visible, cancelHandover]);
 
   const sendOriginal = useCallback(() => {
     tapSend();
@@ -213,7 +268,6 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
           ) : (
             <Review
               order={order}
-              onConfirm={confirmAll}
               onSend={sendOriginal}
               onSetQuantity={order.setQuantity}
               onMeasureRow={measureRow}
@@ -321,13 +375,11 @@ function Sent({
 
 function Review({
   order,
-  onConfirm,
   onSend,
   onSetQuantity,
   onMeasureRow,
 }: {
   order: ReturnType<typeof useVoiceOrder>;
-  onConfirm: () => void;
   onSend: () => void;
   onSetQuantity: (index: number, quantity: number) => void;
   onMeasureRow: (productId: string, frame: LayoutRectangle) => void;
@@ -369,18 +421,20 @@ function Review({
       {/* Always present, whatever the AI managed. This is the order that
           cannot fail to be placeable. */}
       <View style={s.actions}>
+        {/* No button, because there is nothing left to decide: the items are
+            already on their way. Announced rather than asked. */}
         {order.addable.length > 0 ? (
-          <PressableScale
-            accessibilityRole="button"
-            accessibilityLabel={`Add ${order.addable.length} items to the cart and check out`}
-            onPress={onConfirm}
-            scaleTo={0.96}
-            style={s.primary}
+          <View
+            accessibilityRole="progressbar"
+            accessibilityLabel={`Adding ${order.addable.length} items to your cart`}
+            style={s.handing}
           >
-            <Text style={s.primaryText}>
-              Add {order.addable.length} &amp; checkout
+            <ActivityIndicator color={grocery.blue} size="small" />
+            <Text style={s.handingText}>
+              Adding {order.addable.length}{' '}
+              {order.addable.length === 1 ? 'item' : 'items'} to your cart…
             </Text>
-          </PressableScale>
+          </View>
         ) : null}
         <PressableScale
           accessibilityRole="button"
@@ -484,6 +538,15 @@ function ItemRow({
 /** The size a product card sends, so both flights read as the same thing. */
 const FLIGHT_SIZE = 56;
 
+/**
+ * How long the matched items stay on screen before they fly.
+ *
+ * Long enough to read two or three of them and long enough for their rows to
+ * lay out and report where they are; short enough that it reads as the app
+ * getting on with it rather than as a screen waiting to be tapped.
+ */
+const HANDOVER_DELAY_MS = 900;
+
 const s = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0B1F2A66' },
   sheet: {
@@ -576,6 +639,16 @@ const s = StyleSheet.create({
   },
 
   actions: { gap: 8 },
+  handing: {
+    height: 52,
+    borderRadius: 26,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    backgroundColor: grocery.pale,
+  },
+  handingText: { fontSize: 14, fontWeight: '800', color: grocery.blue },
   row: { flexDirection: 'row', gap: 10 },
   primary: {
     flex: 1,

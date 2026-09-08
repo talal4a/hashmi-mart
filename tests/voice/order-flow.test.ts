@@ -61,7 +61,7 @@ describe('voice order', () => {
     expect(result.current.error).toBeTruthy();
   });
 
-  it('keeps the transcript when the parse fails', async () => {
+  it('reads the order out of the transcript when the parse fails', async () => {
     mocked.transcribeOrder.mockResolvedValue('do kilo tamatar');
     mocked.parseOrder.mockRejectedValue(new SupportError('unavailable'));
 
@@ -71,10 +71,31 @@ describe('voice order', () => {
     });
 
     // Transcribe and parse are separate calls precisely so this is possible:
-    // the customer still sees what was heard.
+    // the customer still sees what was heard — and the catalogue can read it
+    // without the model's help, so a dead parse costs the splitting, not the
+    // order. Two kilos of tomatoes were said and two kilos of tomatoes is
+    // what comes back.
     await waitFor(() => expect(result.current.stage).toBe('review'));
     expect(result.current.transcript).toBe('do kilo tamatar');
+    expect(result.current.matches).toEqual([
+      expect.objectContaining({ productId: 'tomato', quantity: 2 }),
+    ]);
+    // Recovered, so there is nothing to apologise for.
+    expect(result.current.error).toBeNull();
+  });
+
+  it('still says something failed when the sentence has nothing in it', async () => {
+    mocked.transcribeOrder.mockResolvedValue('kuch bhej do');
+    mocked.parseOrder.mockRejectedValue(new SupportError('unavailable'));
+
+    const { result } = await renderHook(() => useVoiceOrder());
+    await act(async () => {
+      await result.current.interpret(recording);
+    });
+
+    await waitFor(() => expect(result.current.stage).toBe('review'));
     expect(result.current.matches).toHaveLength(0);
+    expect(result.current.error).toBeTruthy();
   });
 
   it('does not invent items from silence', async () => {

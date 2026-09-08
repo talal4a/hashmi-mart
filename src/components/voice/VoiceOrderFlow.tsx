@@ -70,7 +70,7 @@ export default function VoiceOrderFlow({ visible, onClose }: Props) {
   );
 
   const handoff = useCallback(
-    (items: ConfirmedVoiceItem[], transcript: string | null) => {
+    (items: ConfirmedVoiceItem[], transcript: string | null, missed: string[]) => {
       onClose();
       if (!items.length) return;
 
@@ -100,7 +100,11 @@ export default function VoiceOrderFlow({ visible, onClose }: Props) {
         SETTLE_MS;
 
       after(lastLanding, () =>
-        navigation.navigate('Checkout', { source: 'voice', transcript }),
+        navigation.navigate('Checkout', {
+          source: 'voice',
+          transcript,
+          missed: missed.length ? missed : undefined,
+        }),
       );
     },
     [onClose, add, fly, reduced, navigation],

@@ -42,14 +42,19 @@ jest.mock('../../src/components/voice/VoiceOrderSheet', () => {
     default: ({
       onConfirm,
     }: {
-      onConfirm: (items: unknown[], transcript: string | null) => void;
+      onConfirm: (
+        items: unknown[],
+        transcript: string | null,
+        missed: string[],
+      ) => void;
     }) =>
       react.createElement(
         rn.Pressable,
         {
           accessibilityRole: 'button',
           accessibilityLabel: 'confirm',
-          onPress: () => onConfirm(mockItems, 'دو کلو ٹماٹر اور پالک'),
+          onPress: () =>
+            onConfirm(mockItems, 'دو کلو ٹماٹر اور پالک', ['anday']),
         },
         react.createElement(rn.Text, null, 'confirm'),
       ),
@@ -176,6 +181,9 @@ describe('confirming a voice order', () => {
       // The sentence travels with the order: Urdu and Punjabi are matched
       // against a small catalogue, so what was said settles what was meant.
       transcript: 'دو کلو ٹماٹر اور پالک',
+      // And so does what we could not sell them, or the order just arrives
+      // short with nothing said about it.
+      missed: ['anday'],
     });
   });
 

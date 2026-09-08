@@ -66,6 +66,7 @@ export default function CheckoutScreen() {
 
   const source = route.params?.source ?? 'browse';
   const transcript = route.params?.transcript ?? null;
+  const missed = route.params?.missed ?? [];
 
   const deliveryFee = subtotal >= FREE_DELIVERY_OVER || !count ? 0 : DELIVERY_FEE;
   const total = subtotal + deliveryFee;
@@ -189,6 +190,17 @@ export default function CheckoutScreen() {
                   <Text style={s.heardLabel}>From your voice order</Text>
                 </View>
                 <Text style={s.heardText}>{transcript}</Text>
+              </Animated.View>
+            ) : null}
+
+            {missed.length ? (
+              <Animated.View entering={enter} style={s.missed}>
+                <Text style={s.missedLabel}>Not available</Text>
+                <Text style={s.missedText}>
+                  We could not find {missed.join(', ')} in stock, so{' '}
+                  {missed.length === 1 ? 'it is' : 'they are'} not in this
+                  order.
+                </Text>
               </Animated.View>
             ) : null}
 
@@ -412,6 +424,20 @@ const s = StyleSheet.create({
     color: grocery.blue,
   },
   heardText: { fontSize: 14, lineHeight: 20, color: grocery.ink },
+  missed: {
+    backgroundColor: '#FFF4E4',
+    borderRadius: 18,
+    padding: 13,
+    gap: 4,
+  },
+  missedLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    color: '#D8853F',
+  },
+  missedText: { fontSize: 13, lineHeight: 19, color: grocery.ink },
   line: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   art: { borderRadius: 13, overflow: 'hidden' },
   lineText: { flex: 1, gap: 2 },
