@@ -2,10 +2,7 @@ import { render } from '@testing-library/react-native';
 import CartTab, {
   CART_RISE,
   CART_SLOT_HEIGHT,
-  LIFT,
   MODEL,
-  PEDESTAL_H,
-  PEDESTAL_W,
 } from '../../src/components/home/CartTab';
 
 /**
@@ -13,7 +10,8 @@ import CartTab, {
  *
  * Every number here was given as a range and every one of them was missed at
  * least once — first at 2.6x a nav icon and floating clear of the bar, then
- * flat and too small. Ranges that can only be checked by rebuilding and looking
+ * flat and too small, then stacked on a pedestal that gave one control three
+ * competing frames. Ranges that can only be checked by rebuilding and looking
  * are ranges that drift, so they are checked here instead.
  *
  * These assert on the values the component actually uses. An earlier version of
@@ -27,30 +25,18 @@ describe('cart proportions', () => {
     expect(MODEL).toBeLessThanOrEqual(54);
   });
 
-  it('gives the pedestal the specified footprint', () => {
-    expect(PEDESTAL_W).toBeGreaterThanOrEqual(58);
-    expect(PEDESTAL_W).toBeLessThanOrEqual(68);
-    expect(PEDESTAL_H).toBeGreaterThanOrEqual(38);
-    expect(PEDESTAL_H).toBeLessThanOrEqual(44);
+  it('keeps most of the cart inside the bar', () => {
+    // 30-40%. Below this it stops reading as raised at all; above it, the cart
+    // detaches from the row and looks parked over the page.
+    const protruding = CART_RISE / MODEL;
+    expect(protruding).toBeGreaterThanOrEqual(0.28);
+    expect(protruding).toBeLessThanOrEqual(0.4);
   });
 
-  it('lifts the cart clear of the pedestal without detaching it', () => {
-    expect(LIFT).toBeGreaterThanOrEqual(5);
-    expect(LIFT).toBeLessThanOrEqual(8);
-  });
-
-  it('lands the pedestal inside the bar with room for the label', () => {
-    // The rise is derived so the pedestal ends at 52 of the bar's 72, leaving
-    // the label its row. If that arithmetic breaks, the label ends up over the
-    // cutout or off the bar entirely.
-    const pedestalBottom = -CART_RISE + MODEL + LIFT + PEDESTAL_H;
-    expect(pedestalBottom).toBe(52);
-  });
-
-  it('reserves the whole stack before anything renders into it', () => {
-    // The bar must not resize when artwork loads, so the slot's height covers
-    // cart, lift and pedestal rather than measuring whatever arrives.
-    expect(CART_SLOT_HEIGHT).toBeGreaterThanOrEqual(MODEL + LIFT + PEDESTAL_H);
+  it('reserves its height before anything renders into it', () => {
+    // The bar must not resize when artwork loads, so the slot's height is a
+    // constant rather than whatever the model happens to measure.
+    expect(CART_SLOT_HEIGHT).toBeGreaterThanOrEqual(MODEL);
   });
 });
 

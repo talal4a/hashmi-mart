@@ -16,60 +16,53 @@ import { tapSend } from '../voice/haptics';
 import CartMark from './CartMark';
 
 /**
- * The centre cart: model, pedestal, contact shadow, badge and label.
+ * The centre cart: object, contact shadow, badge and label.
  *
- * Built as one component with fixed bounds because every part of it depends on
- * every other part. The pedestal has to sit under the model, the contact shadow
- * has to touch the wheels, the badge has to clear the basket, and the label has
- * to clear the notch — all in the same coordinate space. Split across the nav
- * bar's style sheet, those relationships are five numbers that drift apart.
+ * There is deliberately no pedestal. An earlier version had one, and it was the
+ * reason the tab looked wrong: the cart already had a cutout framing it and a
+ * shadow anchoring it, and a solid glass box made three containers around one
+ * small control. The eye reads box, then cart, then dip, then label, and cannot
+ * tell which of them is the button. A dimensional object does not need
+ * furniture to stand on — the shadow under its wheels is what says it is
+ * resting on something, and a hard rectangle behind it only gives its silhouette
+ * something to compete with.
+ *
+ * So one anchor, not three. The cart sits *in* the bar with its wheels on the
+ * glass, and the surface dips just enough to acknowledge it.
  *
  * The model is the one thing this file does not draw. `CART_ART` is the seam
- * for a transparent render; until one exists, a cyan glyph stands in at the
- * same size and position, so scale, anchoring and motion are all correct and
- * dropping the artwork in changes nothing else.
+ * for a transparent render; until one exists `CartMark` stands in at the same
+ * size and position, so scale, anchoring and motion are already correct and
+ * dropping artwork in changes nothing else.
  */
 
 /**
  * A transparent render of the cart, when there is one.
  *
- * Replace with `require('../../assets/images/cart-3d.webp')`. The size and
- * position below are already correct for it, and nothing else needs to change.
- * It must be a local asset — fetching it would mean the bar renders without a
- * cart on a cold start, which is the layout shift this component is shaped to
- * avoid.
+ * Replace with `require('../../assets/images/cart-3d.webp')`. It must be a
+ * local asset: fetching it would mean the bar renders without a cart on a cold
+ * start, which is the layout shift this component is shaped to avoid.
  */
 const CART_ART: number | null = null;
 
-/**
- * The model's drawn height.
- *
- * Raised from 40 on the follow-up note, which asks for 46-54 and for the cart
- * to read as the hero of the row rather than as another tab icon. It is the one
- * element allowed to break the bar's line.
- */
-export const MODEL = 48;
-
-/** Clear air between the cart's base and the top of the pedestal. */
-export const LIFT = 6;
-
-export const PEDESTAL_W = 62;
-export const PEDESTAL_H = 40;
-const SHADOW_W = 34;
-const SHADOW_H = 8;
+/** The object's drawn size. */
+export const MODEL = 46;
 
 /**
- * How far the whole element stands above the bar's top edge.
+ * How far the cart stands above the bar's top edge.
  *
- * Derived, not chosen. The pedestal has to end at 52 inside a 72px bar to leave
- * the label its row, and the cart sits a `LIFT` above the pedestal's top — so
- * the rise is whatever puts those two where they belong. Writing it as a
- * literal is how it drifts the next time the model resizes.
+ * 14 of 46 is 30%. Most of the cart is inside the nav, which is what makes it
+ * read as a control in the row rather than a trolley parked over the page — and
+ * it puts the label on the same line as the other four.
  */
-export const CART_RISE = MODEL + LIFT + PEDESTAL_H - 52;
+export const CART_RISE = 14;
 
-/** Total height the slot reserves, so the bar's layout never depends on load. */
-export const CART_SLOT_HEIGHT = MODEL + LIFT + PEDESTAL_H + 15;
+/** Contact shadow, sized to the wheelbase rather than to the whole object. */
+const SHADOW_W = 32;
+const SHADOW_H = 7;
+
+/** Reserved from the first frame, so artwork arriving later cannot resize the bar. */
+export const CART_SLOT_HEIGHT = MODEL + 11 + 12;
 
 type Props = {
   count: number;
@@ -87,10 +80,9 @@ export default function CartTab({ count, active = false, onPress }: Props) {
   /**
    * A breath every five seconds, 1.5px.
    *
-   * Deliberately below the threshold where it becomes an animation you watch.
-   * The delay is most of the cycle, so the movement arrives as something
-   * noticed rather than a rhythm — a cart that bobs continuously reads as a
-   * loading state.
+   * Below the threshold where it becomes something you watch. The delay takes
+   * most of the cycle, so the movement arrives as something noticed rather than
+   * a rhythm — a cart that bobs continuously reads as a loading state.
    */
   useEffect(() => {
     cancelAnimation(float);
@@ -112,8 +104,8 @@ export default function CartTab({ count, active = false, onPress }: Props) {
     return () => cancelAnimation(float);
   }, [reduced, float]);
 
-  // The badge answers the count changing, not the cart being tapped: an item
-  // added from a product card has to be acknowledged here too.
+  // Driven by the count, not the tap: an item added from a product card has to
+  // be acknowledged here too.
   const previous = useRef(count);
   useEffect(() => {
     if (count === previous.current) return;
@@ -133,11 +125,26 @@ export default function CartTab({ count, active = false, onPress }: Props) {
     ],
   }));
 
-  // The shadow tightens as the cart settles onto it and spreads as it lifts,
-  // which is most of what sells the contact.
+  /**
+   * The shadow does the anchoring on its own.
+   *
+   * It tightens and darkens as the cart settles onto it and spreads and fades
+   * as the cart lifts, which is the whole of what tells the eye the two are in
+   * contact. A shadow that stays constant while the object moves is what makes
+   * a composite look pasted together.
+   */
   const shadowStyle = useAnimatedStyle(() => ({
-    opacity: 0.16 + 0.06 * press.value - 0.04 * float.value,
-    transform: [{ scaleX: 1 - 0.08 * float.value + 0.06 * press.value }],
+    opacity: 0.2 + 0.07 * press.value - 0.06 * float.value,
+    transform: [
+      { scaleX: 1 - 0.1 * float.value + 0.07 * press.value },
+      { scaleY: 1 - 0.14 * float.value },
+    ],
+  }));
+
+  // Active is a bloom rather than a box: it tints the surface under the cart
+  // without adding another edge for the silhouette to fight.
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: (active ? 0.85 : 0) * (1 - 0.15 * float.value),
   }));
 
   const badgeStyle = useAnimatedStyle(() => ({
@@ -170,12 +177,7 @@ export default function CartTab({ count, active = false, onPress }: Props) {
           onPress();
         }}
       >
-        {/* Pedestal, contact shadow, model — back to front, so the shadow
-            falls on the pedestal and the model stands on both. */}
-        <View
-          pointerEvents="none"
-          style={[s.pedestal, active && s.pedestalActive]}
-        />
+        <Animated.View pointerEvents="none" style={[s.glow, glowStyle]} />
         <Animated.View pointerEvents="none" style={[s.shadow, shadowStyle]} />
 
         <Animated.View style={[s.model, modelStyle]} pointerEvents="none">
@@ -184,7 +186,6 @@ export default function CartTab({ count, active = false, onPress }: Props) {
               source={CART_ART}
               style={s.art}
               resizeMode="contain"
-              // Decoded at a fixed size, so nothing resizes after load.
               fadeDuration={0}
               accessibilityIgnoresInvertColors
             />
@@ -208,59 +209,37 @@ export default function CartTab({ count, active = false, onPress }: Props) {
 }
 
 const s = StyleSheet.create({
-  // Fixed height, reserved from the first frame whether or not artwork loads.
   slot: { height: CART_SLOT_HEIGHT, alignItems: 'center' },
-  hit: {
-    width: PEDESTAL_W + 12,
-    height: MODEL + LIFT + PEDESTAL_H,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-  },
+  hit: { width: MODEL + 14, height: MODEL, alignItems: 'center' },
 
-  pedestal: {
-    position: 'absolute',
-    bottom: 0,
-    width: PEDESTAL_W,
-    height: PEDESTAL_H,
-    borderRadius: 18,
-    backgroundColor: 'rgba(226, 245, 254, 0.85)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.95)',
-    shadowColor: '#2C6B87',
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  pedestalActive: {
-    backgroundColor: 'rgba(214, 242, 253, 0.82)',
-    borderColor: 'rgba(255, 255, 255, 1)',
-  },
-
-  // A flat ellipse right under the wheels. Small and soft on purpose: a large
+  // Sits under the wheels, on the bar's own glass. Small and soft: a large
   // shadow reads as the cart hovering, which is the opposite of the point.
   shadow: {
     position: 'absolute',
-    // On the pedestal's top face, just under the wheels.
-    bottom: PEDESTAL_H - 6,
+    bottom: 1,
     width: SHADOW_W,
     height: SHADOW_H,
     borderRadius: SHADOW_H,
     backgroundColor: '#0B4A63',
   },
-
-  model: {
-    width: MODEL,
-    height: MODEL,
-    alignItems: 'center',
-    justifyContent: 'center',
+  // Wider and softer than the shadow, and behind it.
+  glow: {
+    position: 'absolute',
+    bottom: -4,
+    width: MODEL + 10,
+    height: 22,
+    borderRadius: 14,
+    backgroundColor: '#8ADCFA',
   },
+
+  model: { width: MODEL, height: MODEL },
   art: { width: MODEL, height: MODEL },
 
   // Upper right, clear of the basket mouth so it never covers the geometry
   // that makes the cart readable.
   badge: {
     position: 'absolute',
-    top: 0,
+    top: -2,
     right: 0,
     minWidth: 18,
     height: 18,
@@ -275,7 +254,10 @@ const s = StyleSheet.create({
   badgeText: { fontSize: 9.5, fontWeight: '700', color: '#FFFFFF' },
 
   label: {
-    marginTop: 4,
+    // 11, not 4: the other tabs' labels start at ~43 within the bar, and the
+    // cart's base is higher than their icons' because it is raised. Matching
+    // the number would leave this label floating above the row.
+    marginTop: 11,
     fontSize: 10,
     letterSpacing: -0.15,
     color: '#65788D',
