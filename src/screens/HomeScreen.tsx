@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CartPreview from '../components/home/CartPreview';
 import { CartFlightProvider } from '../components/home/cartFlight';
+import VoiceOrderSheet from '../components/voice/VoiceOrderSheet';
 import SectionHeader from '../components/home/SectionHeader';
 import { Rail, RailItem, SectionReveal } from '../components/home/rail/Rail';
 import VendorCard, { VENDOR_CARD_WIDTH } from '../components/home/VendorCard';
@@ -40,6 +41,7 @@ export default function HomeScreen() {
   const blurTarget = useRef<View>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const adjustQuantity = useCallback((id: string, delta: number) => {
     setQuantities(previous => ({
       ...previous,
@@ -87,7 +89,7 @@ export default function HomeScreen() {
             <View style={s.inset}>
               <HomeHeader />
               <HomeSearchBar onOpenSupport={openSupport} />
-              <VoiceOrderCard />
+              <VoiceOrderCard onPress={() => setVoiceOpen(true)} />
             </View>
             <View style={s.inset}>
               <HeroBanner />
@@ -157,6 +159,15 @@ export default function HomeScreen() {
           blurTarget={blurTarget}
           cartCount={cartCount}
           onOpenCart={() => setCartOpen(true)}
+        />
+        <VoiceOrderSheet
+          visible={voiceOpen}
+          onClose={() => setVoiceOpen(false)}
+          // Voice items go through the same path a tapped + does, so the cart
+          // has one way in and the fly-to-cart reaction fires for both.
+          onAddToCart={(productId, quantity) =>
+            adjustQuantity(productId, quantity)
+          }
         />
         <CartPreview
           visible={cartOpen}
