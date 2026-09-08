@@ -487,7 +487,6 @@ const styles = StyleSheet.create({
 
   glassLayer: {
     ...StyleSheet.absoluteFillObject,
-
     borderRadius: 34,
 
     overflow: 'hidden',
