@@ -67,3 +67,46 @@ export function deliveryUrl(url: string, px: number): string {
   const t = `f_auto,q_auto,c_fill,g_face,w_${size},h_${size}`;
   return `${url.slice(0, at + marker.length)}${t}/${url.slice(at + marker.length)}`;
 }
+
+/**
+ * Voice orders get their own preset, deliberately not the avatar one.
+ *
+ * A recording of somebody's voice is more sensitive than a profile picture, and
+ * the two need different limits — different formats, a much smaller cap, a
+ * different folder. Sharing a preset would mean loosening whichever one is
+ * stricter, and the stricter one is the one protecting the recordings.
+ *
+ * Unsigned, like the avatar preset, and for the same reason: no secret ships in
+ * the app. What bounds it is the preset's own configuration in the console, so
+ * this is the one-time setup —
+ *
+ *   Settings → Upload → Upload presets → Add upload preset
+ *     Name                 hashmimart_voice_orders_v1
+ *     Signing mode         Unsigned
+ *     Folder               hashmimart/voice-orders
+ *     Resource type        Video          (Cloudinary files audio under video)
+ *     Allowed formats      m4a, mp3, wav, aac
+ *     Max file size        2000000        (2 MB — roughly 120s at 64kbps mono)
+ *     Overwrite            off
+ *     Eager transforms     none           (they cost quota and change nothing)
+ *
+ * This is an interim architecture, not private storage. Delivery URLs are
+ * public to anyone holding one, which is acceptable only because identifiers
+ * are opaque and carry no name, phone, address or email. Before a public
+ * launch, playback should move to signed delivery behind an admin check.
+ */
+export const CLOUDINARY_VOICE = {
+  /** Must match the preset created above, exactly. */
+  uploadPreset: 'hashmimart_voice_orders_v1',
+  /** The preset pins this too; stated here only so the client can assert it. */
+  folder: 'hashmimart/voice-orders',
+} as const;
+
+/**
+ * Where a voice recording is POSTed.
+ *
+ * `/video/upload`, not `/audio/upload`: Cloudinary has no audio resource type
+ * and files audio under video. Posting to the image endpoint fails with a
+ * format error that reads like a corrupt file.
+ */
+export const VOICE_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY.cloudName}/video/upload`;

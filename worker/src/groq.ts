@@ -132,11 +132,18 @@ export async function transcribe(
   key: string,
   audio: Blob,
   filename: string,
+  /**
+   * Domain vocabulary to bias the decode. Not a filter — Whisper still returns
+   * whatever it hears — but it is the difference between "paao" and "power" on
+   * a grocery order.
+   */
+  prompt?: string,
 ): Promise<string> {
   const form = new FormData();
   form.append('file', audio, filename);
   form.append('model', TRANSCRIBE_MODEL);
   form.append('response_format', 'json');
+  if (prompt) form.append('prompt', prompt);
 
   const response = await post(TRANSCRIBE_URL, key, { method: 'POST', body: form });
   const json = (await response.json()) as { text?: string };
@@ -144,4 +151,41 @@ export async function transcribe(
     throw new GroqError('upstream', 'Groq returned no transcript');
   }
   return json.text.trim();
+}
+
+/**
+ * A single non-streaming completion.
+ *
+ * The chat route streams because an answer arriving word by word is most of
+ * what makes it feel responsive. Parsing an order is the opposite: there is
+ * nothing to show until the whole JSON object exists, and a half-parsed list is
+ * not a thing anyone can read. So this waits.
+ *
+ * Temperature is zero because this is an extraction task, not a writing one.
+ * The same sentence should produce the same order every time — a shopping list
+ * that varies between attempts is a shopping list nobody can trust.
+ */
+export async function completeChat(
+  key: string,
+  messages: ChatTurn[],
+): Promise<string> {
+  const response = await post(CHAT_URL, key, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: CHAT_MODEL,
+      messages,
+      temperature: 0,
+      max_tokens: 600,
+      response_format: { type: 'json_object' },
+    }),
+  });
+  const json = (await response.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  const content = json.choices?.[0]?.message?.content;
+  if (typeof content !== 'string') {
+    throw new GroqError('upstream', 'Groq returned no completion');
+  }
+  return content;
 }

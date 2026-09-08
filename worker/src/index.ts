@@ -17,6 +17,7 @@
 import { bearerFrom, AuthError, verifyIdToken } from './auth';
 import { buildSystemPrompt } from './prompt';
 import { GroqError, streamChat, transcribe, type ChatTurn } from './groq';
+import { parseVoiceOrder, transcribeVoiceOrder } from './voice';
 
 export type Env = {
   GROQ_API_KEY: string;
@@ -256,6 +257,76 @@ async function handleTranscribe(request: Request, env: Env): Promise<Response> {
   }
 }
 
+/**
+ * POST /voice/transcribe — the same multipart contract as /transcribe, with the
+ * grocery vocabulary applied.
+ *
+ * A separate route rather than a flag on the existing one because the two have
+ * different futures: support notes are conversation and orders are inventory,
+ * and the moment either needs its own model, cap or prompt they would have to
+ * be split anyway.
+ */
+async function handleVoiceTranscribe(request: Request, env: Env): Promise<Response> {
+  await requireUser(request, env);
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return json({ error: 'invalid' }, 400);
+  }
+
+  const file = form.get('file');
+  if (!(file instanceof File) || file.size === 0) {
+    return json({ error: 'invalid' }, 400);
+  }
+  if (file.size > MAX_AUDIO_BYTES) return json({ error: 'too-large' }, 413);
+
+  const mimeType = (file.type || 'audio/m4a').split(';')[0].trim();
+  if (!ALLOWED_AUDIO.has(mimeType)) return json({ error: 'invalid' }, 400);
+
+  try {
+    const result = await transcribeVoiceOrder(
+      env.GROQ_API_KEY,
+      file,
+      file.name || 'order.m4a',
+    );
+    // An empty transcript is silence. The app offers a re-record or sending the
+    // original; inventing words for it is the one thing this must never do.
+    return json(result, 200);
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+/**
+ * POST /voice/parse — transcript in, structured items out.
+ *
+ * Split from transcription so a parse that comes back empty still leaves the
+ * app holding what was heard. That is what makes the fallback possible: the
+ * customer sees their own words and can send the recording instead of starting
+ * the whole order again.
+ */
+async function handleVoiceParse(request: Request, env: Env): Promise<Response> {
+  await requireUser(request, env);
+
+  let body: { transcript?: unknown };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return json({ error: 'invalid' }, 400);
+  }
+
+  const transcript = String(body?.transcript ?? '').trim();
+  if (!transcript) return json({ error: 'invalid' }, 400);
+
+  try {
+    return json(await parseVoiceOrder(env.GROQ_API_KEY, transcript), 200);
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (!env.GROQ_API_KEY) {
@@ -278,6 +349,10 @@ export default {
     try {
       if (pathname === '/chat') return await handleChat(request, env);
       if (pathname === '/transcribe') return await handleTranscribe(request, env);
+      if (pathname === '/voice/transcribe') {
+        return await handleVoiceTranscribe(request, env);
+      }
+      if (pathname === '/voice/parse') return await handleVoiceParse(request, env);
       return json({ error: 'not-found' }, 404);
     } catch (thrown) {
       // `requireUser` throws the Response it wants sent, which keeps the auth
