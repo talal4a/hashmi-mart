@@ -1,10 +1,5 @@
 import { useState, type RefObject } from 'react';
-import {
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, {
@@ -23,72 +18,21 @@ import {
 import PressableScale from '../ui/PressableScale';
 import { grocery } from './groceryTheme';
 
-/**
- * The floating tab bar, with a curved cradle holding the cart.
- *
- * The surface is one SVG silhouette with one gradient fill. That is the whole
- * design decision, and it is what the three previous attempts got wrong: they
- * described the *shape* with a path and the *frosting* with rectangles, and a
- * rectangle cannot follow a curve. The gap between the two showed up as a pair
- * of crescents beside the cart — 33px tall at their widest — carrying the glass
- * tint with nothing behind them, which is why the curve read as a different
- * colour from the rest of the bar.
- *
- * One shape filled once cannot disagree with itself. The notch is part of the
- * outline rather than a hole cut through stacked layers, so the bar is uniform
- * everywhere by construction, at any width, on any device.
- *
- * The cost is that the fill is translucent rather than a live blur: a
- * `BlurView` is a native rectangle and clipping one to this outline needs
- * `@react-native-masked-view/masked-view`, a native dependency and a rebuild.
- * At 0.92 white over the page it reads as frosted glass, which is what most
- * "glassmorphism" in shipped apps actually is — and unlike a blur it cannot
- * fail on a device that does not support it.
- */
-
 export const TAB_BAR_HEIGHT = 72;
 export const TAB_BAR_GAP = 12;
-/** How far the cart stands proud of the bar. Home reads this for spacing. */
+
 export const TAB_BAR_RISE = 26;
 
-/** Cart button diameter, ring included. */
 const CART_SIZE = 58;
-/**
- * The gap the tab row leaves for it.
- *
- * Matched to the notch mouth (`NOTCH_HALF * 2`) rather than to the button, so
- * no tab — and no selected tab's pill — can reach under the cutout and end up
- * half-drawn over transparency.
- */
+
 const CART_SPACE = 108;
 
-/** Bar corner radius. */
 const R = 28;
-/** Half the notch opening at the top edge. */
+
 const NOTCH_HALF = 54;
-/**
- * How far the cradle dips into the bar.
- *
- * The cart's lowest point is `CART_SIZE - TAB_BAR_RISE` = 32, and the curve is
- * at its deepest directly beneath it, so this number minus 32 *is* the gap
- * under the button. 36 left 4px, which reads as the cradle pinching the cart;
- * 40 gives 8px and still leaves 32px of surface below the notch for the label
- * to sit on.
- */
+
 const NOTCH_DEPTH = 40;
 
-/**
- * The bar's outline, cart cradle included.
- *
- * The notch is two cubics rather than a circular arc, because a cubic lets both
- * ends *and* the base be horizontal. An arc meets the top edge at an angle, and
- * that corner is visible as a nick at the mouth of the cradle however carefully
- * the radius is chosen.
- *
- * `NOTCH_DEPTH` sits below the cart's lowest point (`CART_SIZE -
- * TAB_BAR_RISE` = 32), so the button nests fully inside the cutout instead of
- * overlapping its lower lip.
- */
 function silhouette(width: number): string {
   const cx = width / 2;
   const H = TAB_BAR_HEIGHT;
@@ -122,7 +66,6 @@ type Props = {
   onChange?: (tab: HomeTab) => void;
   onOpenCart: () => void;
   cartCount: number;
-  /** Kept for API compatibility with Home; the surface no longer blurs. */
   blurTarget?: RefObject<View | null>;
   badges?: Partial<Record<HomeTab, number>>;
 };
@@ -136,11 +79,6 @@ export default function HomeBottomNav({
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
   const [active, setActive] = useState<HomeTab>('home');
-
-  // Seeded from the window rather than starting at zero and waiting for
-  // `onLayout`. A width of 0 means no silhouette, and a bar that renders as
-  // loose icons over the page for its first frame — or forever, if the layout
-  // event never arrives. The measurement still refines it.
   const [width, setWidth] = useState(() =>
     Math.min(600, Math.max(0, window.width - 36)),
   );
@@ -210,11 +148,6 @@ export default function HomeBottomNav({
               <Stop offset="1" stopColor="#E6F4FD" stopOpacity={0.88} />
             </SvgGradient>
           </Defs>
-          {/*
-            Stroked from inside the shape. A centred stroke would be clipped in
-            half at the outer edge and read as 0.5px on one side of the cradle
-            and 1px on the other.
-          */}
           <Path
             d={silhouette(width)}
             fill="url(#navSurface)"
