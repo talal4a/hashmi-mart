@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
   cancelAnimation,
+  useAnimatedReaction,
   Easing,
   useAnimatedStyle,
   useReducedMotion,
@@ -14,6 +15,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { tapSend } from '../voice/haptics';
 import CartMark from './CartMark';
+import { useCartFlight } from './cartFlight';
 
 /**
  * The centre cart: object, contact shadow, badge and label.
@@ -72,10 +74,57 @@ type Props = {
 
 export default function CartTab({ count, active = false, onPress }: Props) {
   const reduced = useReducedMotion();
+  const { setTarget, arrivals } = useCartFlight();
 
   const float = useSharedValue(0);
   const press = useSharedValue(0);
   const badgePop = useSharedValue(0);
+  const receive = useSharedValue(0);
+
+  /**
+   * Report where the basket opening actually is, in window coordinates.
+   *
+   * The mouth of the basket, not the centre of the button: an item that
+   * vanishes at the middle of the cart reads as passing behind it. `CartMark`
+   * draws the rim around a third of the way down its 64-unit box, so the target
+   * sits a third down the model and a hair above centre horizontally.
+   *
+   * Measured on layout rather than computed from constants, because the bar
+   * floats and its position depends on the safe-area inset, the window size and
+   * where the dock happens to sit.
+   */
+  const model = useRef<View>(null);
+  const locate = useCallback(() => {
+    const node = model.current;
+    if (!node) return;
+    node.measureInWindow((x, y, width, height) => {
+      if (width <= 0 || height <= 0) {
+        setTarget(null);
+        return;
+      }
+      setTarget({ x: x + width / 2, y: y + height * 0.34 });
+    });
+  }, [setTarget]);
+
+  /**
+   * The cart taking the item: a tilt back as it arrives, then one spring.
+   *
+   * Driven from the UI thread by a counter the flight bumps on landing, so the
+   * reaction is frame-accurate with the item disappearing rather than
+   * approximately timed from JS.
+   */
+  useAnimatedReaction(
+    () => arrivals.value,
+    (now, before) => {
+      if (before === null || now === before) return;
+      if (reduced) return;
+      receive.value = withSequence(
+        withTiming(1, { duration: 130, easing: Easing.out(Easing.quad) }),
+        withSpring(0, { damping: 11, stiffness: 210, mass: 0.6 }),
+      );
+    },
+    [reduced],
+  );
 
   /**
    * A breath every five seconds, 1.5px.
@@ -119,9 +168,16 @@ export default function CartTab({ count, active = false, onPress }: Props) {
 
   const modelStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateY: -1.5 * float.value + 1.5 * press.value },
-      { scale: 1 - 0.05 * press.value },
-      { rotate: `${-0.6 * float.value + 1.2 * press.value}deg` },
+      {
+        translateY: -1.5 * float.value + 1.5 * press.value - 3 * receive.value,
+      },
+      // Scales up to take the item, which is the beat that says it was
+      // received rather than merely aimed at.
+      { scale: 1 - 0.05 * press.value + 0.14 * receive.value },
+      // Tips back as the item drops in, the way a basket does.
+      {
+        rotate: `${-0.6 * float.value + 1.2 * press.value - 5 * receive.value}deg`,
+      },
     ],
   }));
 
@@ -134,10 +190,14 @@ export default function CartTab({ count, active = false, onPress }: Props) {
    * a composite look pasted together.
    */
   const shadowStyle = useAnimatedStyle(() => ({
-    opacity: 0.2 + 0.07 * press.value - 0.06 * float.value,
+    opacity:
+      0.2 + 0.07 * press.value - 0.06 * float.value - 0.05 * receive.value,
     transform: [
-      { scaleX: 1 - 0.1 * float.value + 0.07 * press.value },
-      { scaleY: 1 - 0.14 * float.value },
+      {
+        scaleX:
+          1 - 0.1 * float.value + 0.07 * press.value - 0.1 * receive.value,
+      },
+      { scaleY: 1 - 0.14 * float.value - 0.12 * receive.value },
     ],
   }));
 
@@ -164,7 +224,9 @@ export default function CartTab({ count, active = false, onPress }: Props) {
         accessible
         accessibilityRole="button"
         accessibilityLabel={
-          count > 0 ? `Cart, ${count} ${count === 1 ? 'item' : 'items'}` : 'Cart'
+          count > 0
+            ? `Cart, ${count} ${count === 1 ? 'item' : 'items'}`
+            : 'Cart'
         }
         testID="home-cart"
         onTouchStart={down}
@@ -180,7 +242,13 @@ export default function CartTab({ count, active = false, onPress }: Props) {
         <Animated.View pointerEvents="none" style={[s.glow, glowStyle]} />
         <Animated.View pointerEvents="none" style={[s.shadow, shadowStyle]} />
 
-        <Animated.View style={[s.model, modelStyle]} pointerEvents="none">
+        <Animated.View
+          ref={model}
+          onLayout={locate}
+          collapsable={false}
+          style={[s.model, modelStyle]}
+          pointerEvents="none"
+        >
           {CART_ART ? (
             <Animated.Image
               source={CART_ART}

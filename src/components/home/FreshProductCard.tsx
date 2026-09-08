@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Heart, Minus, Plus } from 'lucide-react-native';
 import type { freshPicks } from '../../data/groceryHome';
 import ProduceArt from './ProduceArt';
+import { useCartFlight } from './cartFlight';
 import { grocery as c } from './groceryTheme';
 
 export const PRODUCT_CARD_WIDTH = 178;
@@ -31,14 +32,46 @@ function AddControl({
   label,
   quantity,
   onAdjust,
+  artRef,
+  art,
 }: {
   label: string;
   quantity?: number;
   onAdjust?: (delta: number) => void;
+  /** The card's illustration, so the flight can start from what was tapped. */
+  artRef?: React.RefObject<View | null>;
+  art?: number;
 }) {
   const [localQty, setQty] = useState(0);
   const qty = quantity ?? localQty;
+  const { fly } = useCartFlight();
+
+  /**
+   * Sends a copy of the card's artwork to the cart.
+   *
+   * Measured at the moment of the tap rather than on layout: this card lives in
+   * a horizontal rail, so where it is on screen depends on how far that rail
+   * has been scrolled. A position captured at mount is wrong as soon as anyone
+   * swipes.
+   *
+   * Only on the way up. Removing an item does not throw anything anywhere.
+   */
+  const launch = () => {
+    const node = artRef?.current;
+    if (!node || art === undefined) return;
+    node.measureInWindow((x, y, width, height) => {
+      if (width <= 0) return;
+      fly({
+        x: x + width / 2,
+        y: y + height / 2,
+        size: Math.min(46, width * 0.55),
+        art,
+      });
+    });
+  };
+
   const adjust = (delta: number) => {
+    if (delta > 0) launch();
     if (onAdjust) onAdjust(delta);
     else setQty(value => Math.max(0, value + delta));
   };
@@ -192,6 +225,9 @@ export default function FreshProductCard({
   const reducedMotion = useReducedMotion();
   const scale = useSharedValue(1);
   const art = useSharedValue(1);
+  // Measured on tap so the flight leaves from the artwork the user pressed
+  // beside, wherever the rail has been scrolled to.
+  const artRef = useRef<View>(null);
 
   const card = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -225,7 +261,7 @@ export default function FreshProductCard({
             end={{ x: 0.9, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
-          <Animated.View style={artStyle}>
+          <Animated.View ref={artRef} collapsable={false} style={artStyle}>
             <ProduceArt index={item.art} size={wellSize} radius={18} />
           </Animated.View>
 
@@ -261,6 +297,8 @@ export default function FreshProductCard({
               label={item.name}
               quantity={quantity}
               onAdjust={onAdjust}
+              artRef={artRef}
+              art={item.art}
             />
           </View>
         </View>
