@@ -2,7 +2,9 @@ import {
   matchCatalog,
   matchOrder,
   orderConfidence,
+  readOrder,
   readQuantity,
+  scanTranscript,
   CATALOG,
 } from '../../src/services/voiceCatalog';
 
@@ -215,5 +217,115 @@ describe('the products that had no aliases at all', () => {
     // Two of five stocked products had no Urdu aliases whatsoever, while
     // aliases existed for milk and eggs, which are not stocked.
     expect(matchCatalog(spoken).productId).toBe(id);
+  });
+});
+
+/**
+ * Reading the sentence itself.
+ *
+ * `matchCatalog` answers "which product is this phrase" — one phrase, one
+ * answer — which silently loses every item but one when it is handed a whole
+ * sentence. That is what "I need bananas and tomatoes" came back with: the
+ * tomatoes. These pin the floor under the model: whatever the parse does or
+ * fails to do, a sentence naming things we stock produces those things.
+ */
+describe('scanning a whole sentence', () => {
+  it('finds every product named, not just the first', () => {
+    const found = scanTranscript('mujhe kela aur tamatar chahiye');
+    expect(found.map(match => match.productId)).toEqual(['banana', 'tomato']);
+  });
+
+  it('finds them in Urdu script, in the order they were said', () => {
+    const found = scanTranscript('مجھے کیلا اور ٹماٹر چاہیے');
+    expect(found.map(match => match.productId)).toEqual(['banana', 'tomato']);
+  });
+
+  it('gives each item the quantity said in front of it', () => {
+    const found = scanTranscript('دو کلو ٹماٹر اور تین کیلے');
+    expect(found).toEqual([
+      expect.objectContaining({ productId: 'tomato', quantity: 2 }),
+      expect.objectContaining({ productId: 'banana', quantity: 3 }),
+    ]);
+  });
+
+  it('does not read one item quantity onto the next item', () => {
+    // "teen" belongs to the bananas. The spinach that follows was not ordered
+    // three times, and defaulting to one is the answer a stepper fixes.
+    const found = scanTranscript('teen kele palak');
+    expect(found).toEqual([
+      expect.objectContaining({ productId: 'banana', quantity: 3 }),
+      expect.objectContaining({ productId: 'spinach', quantity: 1 }),
+    ]);
+  });
+
+  it('reads aadha and paao as weights, not as counts', () => {
+    expect(scanTranscript('aadha kilo palak')).toEqual([
+      expect.objectContaining({ productId: 'spinach', quantity: 0.5, unit: 'kg' }),
+    ]);
+  });
+
+  it('says the same thing twice and means it once', () => {
+    const found = scanTranscript('tamatar chahiye, do kilo tamatar');
+    expect(found).toHaveLength(1);
+    expect(found[0].productId).toBe('tomato');
+  });
+
+  it('finds nothing in a sentence that names nothing we sell', () => {
+    expect(scanTranscript('kuch bhej do jaldi')).toEqual([]);
+    expect(scanTranscript('')).toEqual([]);
+  });
+
+  it('never claims high confidence for a word it had to guess at', () => {
+    // A sentence is long enough that some word is always within an edit of
+    // something; the loose pass exists, but it is not allowed to look certain.
+    const found = scanTranscript('mujhe tamatarr chahiye');
+    expect(found[0]?.productId).toBe('tomato');
+    expect(found[0]?.confidence).not.toBe('high');
+  });
+});
+
+/**
+ * The two readings together.
+ *
+ * The parse splits and counts; the scan cannot miss. Neither is trusted alone,
+ * and the merge has to keep what only one of them knows.
+ */
+describe('reading an order', () => {
+  it('recovers an item the model dropped', () => {
+    // The model returned the sentence unsplit, so it is one match and the
+    // bananas are gone. The scan puts them back.
+    const read = readOrder('kela aur tamatar', [{ query: 'kela aur tamatar' }]);
+    expect(read.map(match => match.productId).sort()).toEqual([
+      'banana',
+      'tomato',
+    ]);
+  });
+
+  it('keeps the model quantity for an item it did report', () => {
+    const read = readOrder('do kilo tamatar aur kela', [
+      { query: 'tamatar', quantity: 2 },
+    ]);
+    expect(read).toContainEqual(
+      expect.objectContaining({ productId: 'tomato', quantity: 2 }),
+    );
+    expect(read).toContainEqual(
+      expect.objectContaining({ productId: 'banana' }),
+    );
+  });
+
+  it('keeps an item we do not stock, which the scan can never report', () => {
+    // "Heard, but not sold here" is the one thing only the parse knows: the
+    // scan sees the shelf, so it can only ever find what is on it.
+    const read = readOrder('mujhe anday chahiye', [{ query: 'anday' }]);
+    expect(read).toEqual([
+      expect.objectContaining({ query: 'anday', confidence: 'low' }),
+    ]);
+  });
+
+  it('does not duplicate an item both readings found', () => {
+    const read = readOrder('do kilo tamatar', [
+      { query: 'tamatar', quantity: 2 },
+    ]);
+    expect(read).toHaveLength(1);
   });
 });

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SupportError, supportErrorMessage } from '../services/supportService';
 import {
-  matchOrder,
   orderConfidence,
+  readOrder,
+  scanTranscript,
   type CatalogMatch,
   type MatchConfidence,
 } from '../services/voiceCatalog';
@@ -127,7 +128,9 @@ export default function useVoiceOrder() {
     try {
       const parsed = await parseOrder(transcript);
       if (!mounted.current) return;
-      const matches = matchOrder(parsed.items);
+      // The transcript is read as well as the model's list, and anything the
+      // model missed but the customer plainly said is added from it.
+      const matches = readOrder(transcript, parsed.items);
       setState({
         stage: 'review',
         transcript,
@@ -141,11 +144,17 @@ export default function useVoiceOrder() {
       if (!mounted.current) return;
       // The transcript survives a failed parse, which is the point of doing
       // them separately: the customer can still see what was heard.
+      // A dead parse is not a dead order. The words are already here and the
+      // catalogue can read them, so the sentence is scanned directly rather
+      // than handing back an empty list with an apology on it.
+      const matches = scanTranscript(transcript);
       setState({
         ...EMPTY,
         stage: 'review',
         transcript,
-        error: supportErrorMessage(kind),
+        matches,
+        confidence: orderConfidence(matches),
+        error: matches.length ? null : supportErrorMessage(kind),
       });
     }
   }, []);

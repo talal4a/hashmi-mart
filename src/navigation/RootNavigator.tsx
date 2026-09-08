@@ -25,7 +25,12 @@ export type RootStackParamList = {
    * copied into navigation params where an edit made here could not get back.
    */
   Checkout:
-    | { source?: 'voice' | 'browse'; transcript?: string | null }
+    | {
+        source?: 'voice' | 'browse';
+        transcript?: string | null;
+        /** Spoken items we do not stock, so checkout can say so. */
+        missed?: string[];
+      }
     | undefined;
 };
 
