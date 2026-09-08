@@ -33,6 +33,14 @@ import { grocery } from './groceryTheme';
 export const TAB_BAR_HEIGHT = 72;
 export const TAB_BAR_GAP = 12;
 const INSET = 6;
+
+/**
+ * The pill's corner radius, in one place because four layers have to agree on
+ * it. They stack — blur, gradient, tint, hairline border — and a corner where
+ * one of them rounds differently from the rest is visible as a colour seam
+ * rather than as a wrong radius.
+ */
+const PILL_RADIUS = 34;
 const SPRING = {
   damping: 26,
   stiffness: 380,
@@ -137,6 +145,15 @@ const GlassBackdrop = memo(function GlassBackdrop({
 }: Pick<Props, 'blurTarget'>) {
   return (
     <>
+      {/*
+        Each layer rounds itself rather than trusting the parent to clip it.
+        On Android the blur is a real native view doing a hardware-accelerated
+        pass, and it does not honour an ancestor's `overflow: hidden` with a
+        border radius — so it painted square into all four corners while the
+        pill's own tint clipped round. The result was a corner that was a
+        visibly different colour from the middle of the bar. `overflow` stays
+        on both as belt and braces for the gradient, which does clip.
+      */}
       <BlurView
         pointerEvents="none"
         blurTarget={blurTarget}
@@ -144,12 +161,18 @@ const GlassBackdrop = memo(function GlassBackdrop({
         blurReductionFactor={4}
         tint={Platform.OS === 'ios' ? 'systemUltraThinMaterialLight' : 'light'}
         intensity={45}
-        style={StyleSheet.absoluteFill}
+        style={[
+          StyleSheet.absoluteFill,
+          { borderRadius: PILL_RADIUS, overflow: 'hidden' },
+        ]}
       />
       <LinearGradient
         pointerEvents="none"
         colors={['#FFFFFF50', '#E4F5FF26', '#FFFFFF38']}
-        style={StyleSheet.absoluteFill}
+        style={[
+          StyleSheet.absoluteFill,
+          { borderRadius: PILL_RADIUS, overflow: 'hidden' },
+        ]}
       />
     </>
   );
@@ -221,7 +244,11 @@ export default function HomeBottomNav({ onChange, blurTarget, badges }: Props) {
           pointerEvents="none"
           style={[
             StyleSheet.absoluteFill,
-            { borderRadius: 34, borderWidth: 1, borderColor: '#FFFFFFA8' },
+            {
+              borderRadius: PILL_RADIUS,
+              borderWidth: 1,
+              borderColor: '#FFFFFFA8',
+            },
           ]}
         />
       </View>
@@ -233,7 +260,7 @@ const s = StyleSheet.create({
   shadow: {
     width: '100%',
     maxWidth: 600,
-    borderRadius: 34,
+    borderRadius: PILL_RADIUS,
     shadowColor: '#345B73',
     shadowOpacity: 0.12,
     shadowRadius: 16,
@@ -242,7 +269,7 @@ const s = StyleSheet.create({
   },
   pill: {
     height: TAB_BAR_HEIGHT,
-    borderRadius: 34,
+    borderRadius: PILL_RADIUS,
     overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
@@ -258,7 +285,11 @@ const s = StyleSheet.create({
   },
   activeGlass: {
     flex: 1,
-    borderRadius: 28,
+    // Concentric with the pill: an inner corner inset by `n` from an outer
+    // radius `r` sits right only at `r - n`. Derived rather than written as 28,
+    // so changing the pill's roundness cannot leave the selector square-ish at
+    // the first and last tab.
+    borderRadius: PILL_RADIUS - INSET,
     borderWidth: 1,
     borderColor: '#FFFFFFD9',
   },
