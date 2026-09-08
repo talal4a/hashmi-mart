@@ -59,6 +59,33 @@ async function idToken(): Promise<string> {
   }
 }
 
+/**
+ * How long an AI call may take before it is treated as dead.
+ *
+ * Without this a stalled connection leaves the sheet on "Listening to your
+ * order…" indefinitely: no error, no timeout, nothing to retry, and no way
+ * back except closing the sheet and losing the recording. A request that has
+ * not answered in this long is not going to.
+ */
+const AI_TIMEOUT_MS = 30000;
+
+/** Wraps a request so a connection that never answers still fails. */
+async function withTimeout(
+  run: (signal: AbortSignal) => Promise<Response>,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+  try {
+    return await run(controller.signal);
+  } catch (error) {
+    throw new SupportError(
+      (error as Error)?.name === 'AbortError' ? 'timeout' : 'offline',
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function kindFromStatus(status: number): SupportFailure {
   if (status === 401) return 'unauthenticated';
   if (status === 429) return 'busy';
@@ -80,16 +107,14 @@ export async function transcribeOrder(
     type: mimeType,
   } as unknown as Blob);
 
-  let response: Response;
-  try {
-    response = await fetch(`${SUPPORT_API_URL}/voice/transcribe`, {
+  const response = await withTimeout(signal =>
+    fetch(`${SUPPORT_API_URL}/voice/transcribe`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
       body: form,
-    });
-  } catch {
-    throw new SupportError('offline');
-  }
+      signal,
+    }),
+  );
   if (!response.ok) throw new SupportError(kindFromStatus(response.status));
 
   const data = (await response.json()) as { text?: string };
@@ -111,9 +136,8 @@ export async function parseOrder(
 ): Promise<{ items: ParsedItem[]; language?: string }> {
   const token = await idToken();
 
-  let response: Response;
-  try {
-    response = await fetch(`${SUPPORT_API_URL}/voice/parse`, {
+  const response = await withTimeout(signal =>
+    fetch(`${SUPPORT_API_URL}/voice/parse`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -121,10 +145,9 @@ export async function parseOrder(
         Accept: 'application/json',
       },
       body: JSON.stringify({ transcript }),
-    });
-  } catch {
-    throw new SupportError('offline');
-  }
+      signal,
+    }),
+  );
   if (!response.ok) throw new SupportError(kindFromStatus(response.status));
 
   const data = (await response.json()) as {
