@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { ShoppingCart } from 'lucide-react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -14,6 +13,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { tapSend } from '../voice/haptics';
+import CartMark from './CartMark';
 
 /**
  * The centre cart: model, pedestal, contact shadow, badge and label.
@@ -41,34 +41,35 @@ import { tapSend } from '../voice/haptics';
  */
 const CART_ART: number | null = null;
 
-/** Height of an ordinary nav icon, which everything here is measured against. */
-export const NAV_ICON = 22;
-
 /**
  * The model's drawn height.
  *
- * 1.8x a nav icon. The brief asks for 1.6x-1.9x and the previous 58px circle
- * was 2.6x, which is what made it read as pasted on rather than belonging to
- * the row.
+ * Raised from 40 on the follow-up note, which asks for 46-54 and for the cart
+ * to read as the hero of the row rather than as another tab icon. It is the one
+ * element allowed to break the bar's line.
  */
-const MODEL = Math.round(NAV_ICON * 1.8);
+export const MODEL = 48;
+
+/** Clear air between the cart's base and the top of the pedestal. */
+export const LIFT = 6;
+
+export const PEDESTAL_W = 62;
+export const PEDESTAL_H = 40;
+const SHADOW_W = 34;
+const SHADOW_H = 8;
 
 /**
- * How far the model stands above the bar's top edge.
+ * How far the whole element stands above the bar's top edge.
  *
- * 14 of 40 is 35% — inside the 30-40% the brief asks for. The majority of the
- * cart is inside the nav, which is the difference between a control that lives
- * in the bar and a trolley floating over the page.
+ * Derived, not chosen. The pedestal has to end at 52 inside a 72px bar to leave
+ * the label its row, and the cart sits a `LIFT` above the pedestal's top — so
+ * the rise is whatever puts those two where they belong. Writing it as a
+ * literal is how it drifts the next time the model resizes.
  */
-export const CART_RISE = 14;
-
-const PEDESTAL_W = 54;
-const PEDESTAL_H = 30;
-const SHADOW_W = 30;
-const SHADOW_H = 7;
+export const CART_RISE = MODEL + LIFT + PEDESTAL_H - 52;
 
 /** Total height the slot reserves, so the bar's layout never depends on load. */
-export const CART_SLOT_HEIGHT = CART_RISE + MODEL + 22;
+export const CART_SLOT_HEIGHT = MODEL + LIFT + PEDESTAL_H + 15;
 
 type Props = {
   count: number;
@@ -188,12 +189,7 @@ export default function CartTab({ count, active = false, onPress }: Props) {
               accessibilityIgnoresInvertColors
             />
           ) : (
-            <ShoppingCart
-              size={MODEL - 6}
-              color="#0A96D8"
-              strokeWidth={1.9}
-              absoluteStrokeWidth
-            />
+            <CartMark size={MODEL} />
           )}
         </Animated.View>
 
@@ -216,9 +212,9 @@ const s = StyleSheet.create({
   slot: { height: CART_SLOT_HEIGHT, alignItems: 'center' },
   hit: {
     width: PEDESTAL_W + 12,
-    height: CART_RISE + MODEL + 2,
+    height: MODEL + LIFT + PEDESTAL_H,
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
   },
 
   pedestal: {
@@ -226,8 +222,8 @@ const s = StyleSheet.create({
     bottom: 0,
     width: PEDESTAL_W,
     height: PEDESTAL_H,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255, 255, 255, 0.62)',
+    borderRadius: 18,
+    backgroundColor: 'rgba(226, 245, 254, 0.85)',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(255, 255, 255, 0.95)',
     shadowColor: '#2C6B87',
@@ -244,7 +240,8 @@ const s = StyleSheet.create({
   // shadow reads as the cart hovering, which is the opposite of the point.
   shadow: {
     position: 'absolute',
-    bottom: 8,
+    // On the pedestal's top face, just under the wheels.
+    bottom: PEDESTAL_H - 6,
     width: SHADOW_W,
     height: SHADOW_H,
     borderRadius: SHADOW_H,
@@ -252,7 +249,6 @@ const s = StyleSheet.create({
   },
 
   model: {
-    marginBottom: 6,
     width: MODEL,
     height: MODEL,
     alignItems: 'center',
