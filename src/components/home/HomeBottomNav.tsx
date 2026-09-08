@@ -1,8 +1,18 @@
 import { useState, type RefObject } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
-import { BlurView } from 'expo-blur';
+import {
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, {
+  Defs,
+  LinearGradient as SvgGradient,
+  Path,
+  Stop,
+} from 'react-native-svg';
 import {
   ClipboardList,
   Home,
@@ -14,43 +24,90 @@ import PressableScale from '../ui/PressableScale';
 import { grocery } from './groceryTheme';
 
 /**
- * The floating tab bar, with the cart raised out of its centre.
+ * The floating tab bar, with a curved cradle holding the cart.
  *
- * The surface is a rounded rectangle, not an SVG silhouette with a notch cut
- * into it. That is a deliberate step back from the previous version, which
- * broke in three different ways for the same underlying reason: the shape was
- * described by a path built from a measured width, while the frosting behind it
- * was described by rectangles. Those two can never agree along a curve. The
- * visible symptom was a pair of crescents beside the cart carrying the glass
- * tint with no blur behind them — 33px tall at their widest, which is why the
- * curve read as a different colour from the rest of the bar.
+ * The surface is one SVG silhouette with one gradient fill. That is the whole
+ * design decision, and it is what the three previous attempts got wrong: they
+ * described the *shape* with a path and the *frosting* with rectangles, and a
+ * rectangle cannot follow a curve. The gap between the two showed up as a pair
+ * of crescents beside the cart — 33px tall at their widest — carrying the glass
+ * tint with nothing behind them, which is why the curve read as a different
+ * colour from the rest of the bar.
  *
- * A rectangle can be clipped, blurred, tinted and bordered by four layers that
- * all round the same way, so the bar is one uniform colour everywhere by
- * construction rather than by careful alignment.
+ * One shape filled once cannot disagree with itself. The notch is part of the
+ * outline rather than a hole cut through stacked layers, so the bar is uniform
+ * everywhere by construction, at any width, on any device.
  *
- * The cart still reads as sitting *in* the bar rather than on it: it is raised
- * above the top edge and carries a solid white ring, so the bar appears to
- * cradle it. That effect costs one border instead of a path, a mask and three
- * blur passes.
- *
- * The surface also has its own `backgroundColor`. The blur sits on top of it,
- * so when blurring works the colour is invisible — and when it does not (an
- * unsupported device, a failed `blurTarget`), the bar is still a bar rather
- * than a row of icons floating over the page, which is what the previous
- * version degraded to.
+ * The cost is that the fill is translucent rather than a live blur: a
+ * `BlurView` is a native rectangle and clipping one to this outline needs
+ * `@react-native-masked-view/masked-view`, a native dependency and a rebuild.
+ * At 0.92 white over the page it reads as frosted glass, which is what most
+ * "glassmorphism" in shipped apps actually is — and unlike a blur it cannot
+ * fail on a device that does not support it.
  */
 
 export const TAB_BAR_HEIGHT = 72;
 export const TAB_BAR_GAP = 12;
-/** How far the cart button stands proud of the bar. Home reads this for spacing. */
-export const TAB_BAR_RISE = 24;
+/** How far the cart stands proud of the bar. Home reads this for spacing. */
+export const TAB_BAR_RISE = 26;
 
-/** The gap left in the tab row for the cart to sit in. */
-const CART_SPACE = 82;
+/** Cart button diameter, ring included. */
+const CART_SIZE = 58;
+/**
+ * The gap the tab row leaves for it.
+ *
+ * Matched to the notch mouth (`NOTCH_HALF * 2`) rather than to the button, so
+ * no tab — and no selected tab's pill — can reach under the cutout and end up
+ * half-drawn over transparency.
+ */
+const CART_SPACE = 108;
 
-/** One radius for every layer of the surface, so none of them can disagree. */
-const BAR_RADIUS = 32;
+/** Bar corner radius. */
+const R = 28;
+/** Half the notch opening at the top edge. */
+const NOTCH_HALF = 54;
+/**
+ * How far the cradle dips into the bar.
+ *
+ * The cart's lowest point is `CART_SIZE - TAB_BAR_RISE` = 32, and the curve is
+ * at its deepest directly beneath it, so this number minus 32 *is* the gap
+ * under the button. 36 left 4px, which reads as the cradle pinching the cart;
+ * 40 gives 8px and still leaves 32px of surface below the notch for the label
+ * to sit on.
+ */
+const NOTCH_DEPTH = 40;
+
+/**
+ * The bar's outline, cart cradle included.
+ *
+ * The notch is two cubics rather than a circular arc, because a cubic lets both
+ * ends *and* the base be horizontal. An arc meets the top edge at an angle, and
+ * that corner is visible as a nick at the mouth of the cradle however carefully
+ * the radius is chosen.
+ *
+ * `NOTCH_DEPTH` sits below the cart's lowest point (`CART_SIZE -
+ * TAB_BAR_RISE` = 32), so the button nests fully inside the cutout instead of
+ * overlapping its lower lip.
+ */
+function silhouette(width: number): string {
+  const cx = width / 2;
+  const H = TAB_BAR_HEIGHT;
+  return [
+    `M ${R} 0`,
+    `H ${cx - NOTCH_HALF}`,
+    `C ${cx - 36} 0 ${cx - 42} ${NOTCH_DEPTH} ${cx} ${NOTCH_DEPTH}`,
+    `C ${cx + 42} ${NOTCH_DEPTH} ${cx + 36} 0 ${cx + NOTCH_HALF} 0`,
+    `H ${width - R}`,
+    `Q ${width} 0 ${width} ${R}`,
+    `V ${H - R}`,
+    `Q ${width} ${H} ${width - R} ${H}`,
+    `H ${R}`,
+    `Q 0 ${H} 0 ${H - R}`,
+    `V ${R}`,
+    `Q 0 0 ${R} 0`,
+    'Z',
+  ].join(' ');
+}
 
 const TABS = [
   { key: 'home', label: 'Home', icon: Home },
@@ -65,7 +122,8 @@ type Props = {
   onChange?: (tab: HomeTab) => void;
   onOpenCart: () => void;
   cartCount: number;
-  blurTarget: RefObject<View | null>;
+  /** Kept for API compatibility with Home; the surface no longer blurs. */
+  blurTarget?: RefObject<View | null>;
   badges?: Partial<Record<HomeTab, number>>;
 };
 
@@ -73,11 +131,19 @@ export default function HomeBottomNav({
   onChange,
   onOpenCart,
   cartCount,
-  blurTarget,
   badges,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const window = useWindowDimensions();
   const [active, setActive] = useState<HomeTab>('home');
+
+  // Seeded from the window rather than starting at zero and waiting for
+  // `onLayout`. A width of 0 means no silhouette, and a bar that renders as
+  // loose icons over the page for its first frame — or forever, if the layout
+  // event never arrives. The measurement still refines it.
+  const [width, setWidth] = useState(() =>
+    Math.min(600, Math.max(0, window.width - 36)),
+  );
 
   const renderTab = (tab: (typeof TABS)[number]) => {
     const selected = active === tab.key;
@@ -126,31 +192,38 @@ export default function HomeBottomNav({
       pointerEvents="box-none"
       style={[s.dock, { bottom: insets.bottom + TAB_BAR_GAP }]}
     >
-      {/* No `overflow: hidden` here — the cart rises past the top edge and
-          would be clipped by it. The surface below clips itself instead. */}
-      <View pointerEvents="box-none" style={s.bar}>
-        <View pointerEvents="none" style={s.surface}>
+      <View
+        pointerEvents="box-none"
+        style={s.bar}
+        onLayout={event => setWidth(event.nativeEvent.layout.width)}
+      >
+        <Svg
+          pointerEvents="none"
+          width={width}
+          height={TAB_BAR_HEIGHT}
+          style={StyleSheet.absoluteFill}
+        >
+          <Defs>
+            <SvgGradient id="navSurface" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.94} />
+              <Stop offset="0.55" stopColor="#F4FBFF" stopOpacity={0.9} />
+              <Stop offset="1" stopColor="#E6F4FD" stopOpacity={0.88} />
+            </SvgGradient>
+          </Defs>
           {/*
-            Each layer rounds itself rather than trusting the parent. On Android
-            `dimezisBlurViewSdk31Plus` is a real native view doing a
-            hardware-accelerated pass, and it ignores an ancestor's `overflow:
-            hidden`, so without its own radius it paints square into the corners.
+            Stroked from inside the shape. A centred stroke would be clipped in
+            half at the outer edge and read as 0.5px on one side of the cradle
+            and 1px on the other.
           */}
-          <BlurView
-            blurTarget={blurTarget}
-            blurMethod="dimezisBlurViewSdk31Plus"
-            blurReductionFactor={4}
-            tint={
-              Platform.OS === 'ios' ? 'systemUltraThinMaterialLight' : 'light'
-            }
-            intensity={45}
-            style={s.layer}
+          <Path
+            d={silhouette(width)}
+            fill="url(#navSurface)"
+            stroke="#FFFFFF"
+            strokeOpacity={0.95}
+            strokeWidth={1.4}
+            strokeLinejoin="round"
           />
-          <LinearGradient
-            colors={['#FFFFFFB8', '#E8F6FF9E', '#FFFFFFA6']}
-            style={s.layer}
-          />
-        </View>
+        </Svg>
 
         <View style={s.tabs}>
           {TABS.slice(0, 2).map(renderTab)}
@@ -167,8 +240,13 @@ export default function HomeBottomNav({
             scaleTo={0.94}
             style={s.cartButton}
           >
-            <LinearGradient colors={['#25BAF0', '#0A96D8']} style={s.cartFill}>
-              <ShoppingCart size={24} color="#FFFFFF" strokeWidth={2} />
+            <LinearGradient
+              colors={['#3FCBFA', '#0A96D8']}
+              start={{ x: 0.2, y: 0 }}
+              end={{ x: 0.8, y: 1 }}
+              style={s.cartFill}
+            >
+              <ShoppingCart size={24} color="#FFFFFF" strokeWidth={2.1} />
             </LinearGradient>
             {cartCount > 0 ? (
               <View style={s.cartBadge}>
@@ -187,36 +265,8 @@ export default function HomeBottomNav({
 
 const s = StyleSheet.create({
   dock: { position: 'absolute', left: 18, right: 18, alignItems: 'center' },
+  // No `overflow: hidden` — the cart rises past the top edge.
   bar: { width: '100%', maxWidth: 600, height: TAB_BAR_HEIGHT },
-
-  surface: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: BAR_RADIUS,
-    overflow: 'hidden',
-    // The fallback under the blur. Elevation with no background draws nothing
-    // on Android, which is how the bar ended up invisible before.
-    backgroundColor: 'rgba(255, 255, 255, 0.62)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.9)',
-    shadowColor: '#345B73',
-    shadowOpacity: 0.14,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 7,
-  },
-  layer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: BAR_RADIUS,
-    overflow: 'hidden',
-  },
 
   tabs: {
     flexDirection: 'row',
@@ -227,17 +277,17 @@ const s = StyleSheet.create({
   cartSpacer: { width: CART_SPACE },
   tab: { flex: 1, height: 64, justifyContent: 'center' },
   tabContent: {
-    height: 56,
-    borderRadius: 25,
+    height: 54,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 4,
     borderWidth: 1,
     borderColor: 'transparent',
   },
   tabSelected: {
-    backgroundColor: 'rgba(255, 255, 255, 0.55)',
-    borderColor: 'rgba(255, 255, 255, 0.85)',
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
+    borderColor: 'rgba(255, 255, 255, 0.95)',
   },
   label: { fontSize: 10, letterSpacing: -0.15 },
 
@@ -250,30 +300,32 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   cartButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    // The ring. A solid rim is what makes the bar look like it cradles the
-    // cart, and it is what a notch was being cut for.
+    width: CART_SIZE,
+    height: CART_SIZE,
+    borderRadius: CART_SIZE / 2,
+    // The rim that separates the button from the cradle behind it.
     backgroundColor: '#FFFFFF',
     padding: 3,
-    shadowColor: '#087DAE',
-    shadowOpacity: 0.28,
+    shadowColor: '#0B6E97',
+    shadowOpacity: 0.3,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 5 },
     elevation: 9,
   },
   cartFill: {
     flex: 1,
-    borderRadius: 26,
+    borderRadius: CART_SIZE / 2 - 3,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cartLabel: {
-    marginTop: 6,
-    color: '#167EA7',
+    // Clears NOTCH_DEPTH (40) from the cart's base (32): any less and the top
+    // of the text sits over the transparent cutout.
+    marginTop: 10,
+    color: '#127BA5',
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: -0.1,
   },
   cartBadge: {
     position: 'absolute',
