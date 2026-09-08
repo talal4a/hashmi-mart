@@ -9,6 +9,7 @@ import { auth, db } from '../config/firebase';
 import { CLOUDINARY_VOICE, VOICE_UPLOAD_URL } from '../config/cloudinary';
 import { SUPPORT_API_URL } from '../config/backend';
 import { SupportError, type SupportFailure } from './supportService';
+import { postAudio } from './audioUpload';
 import type { CatalogMatch } from './voiceCatalog';
 
 /**
@@ -100,24 +101,12 @@ export async function transcribeOrder(
 ): Promise<string> {
   const token = await idToken();
 
-  const form = new FormData();
-  form.append('file', {
+  const data = await postAudio<{ text?: string }>(
+    `${SUPPORT_API_URL}/voice/transcribe`,
+    token,
     uri,
-    name: 'order.m4a',
-    type: mimeType,
-  } as unknown as Blob);
-
-  const response = await withTimeout(signal =>
-    fetch(`${SUPPORT_API_URL}/voice/transcribe`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-      body: form,
-      signal,
-    }),
+    mimeType,
   );
-  if (!response.ok) throw new SupportError(kindFromStatus(response.status));
-
-  const data = (await response.json()) as { text?: string };
   // An empty transcript is silence, not a failure to be papered over. The
   // caller offers a re-record or sending the original.
   return typeof data.text === 'string' ? data.text.trim() : '';
@@ -189,7 +178,17 @@ export async function uploadVoiceRecording(
   voiceOrderId: string,
   uri: string,
 ): Promise<UploadedVoice> {
-  const file = new File(uri);
+  // Same reason as `postAudio`: a recording that is not on disk is a
+  // missing file, not a bad connection.
+  let file: File;
+  try {
+    file = new File(uri);
+    if (!file.exists || file.size === 0) throw new SupportError('missing-file');
+  } catch (error) {
+    throw error instanceof SupportError
+      ? error
+      : new SupportError('missing-file');
+  }
 
   const task = file.createUploadTask(VOICE_UPLOAD_URL, {
     uploadType: UploadType.MULTIPART,
