@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import type { LayoutRectangle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   FadeIn,
@@ -39,14 +40,34 @@ import { tapCancel, tapHandoff, tapRecordStart, tapSend } from './haptics';
  * neither; in all four the send button is the same button.
  */
 
+/**
+ * A confirmed item, and where on screen the customer saw it.
+ *
+ * The origin travels with it because the flight has to leave from the row that
+ * was on screen a moment ago. It is measured here, while the sheet is still up
+ * and the row still exists; by the time anything flies, both are gone.
+ */
+export type ConfirmedVoiceItem = {
+  productId: string;
+  quantity: number;
+  origin?: { x: number; y: number; size: number };
+};
+
 type Props = {
   visible: boolean;
   onClose: () => void;
-  /** Adds a confirmed item to the cart. Same path the product cards use. */
-  onAddToCart: (productId: string, quantity: number) => void;
+  /**
+   * Hands over everything the customer confirmed, at once.
+   *
+   * The screen owns what happens next — the items fly into the cart and the
+   * order goes to checkout — because none of it can happen from in here: a
+   * Modal is its own window, drawn above the flight layer, so anything launched
+   * while this sheet is up would travel behind it.
+   */
+  onConfirm: (items: ConfirmedVoiceItem[], transcript: string | null) => void;
 };
 
-export default function VoiceOrderSheet({ visible, onClose, onAddToCart }: Props) {
+export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) {
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
   const recorder = useVoiceRecorder();
@@ -82,21 +103,55 @@ export default function VoiceOrderSheet({ visible, onClose, onAddToCart }: Props
   }, [recorder, order]);
 
   /**
-   * Adds the matched items, one after another.
+   * Where each matched row is, in window coordinates.
    *
-   * Staggered rather than simultaneous: three flights leaving at once read as
-   * one blurred movement, and the cart's reaction fires three times over itself.
-   * 160ms apart is enough to see each land.
+   * Keyed by product rather than by list position: rows re-render whenever a
+   * quantity changes, and an index is only stable until an item is zeroed out.
+   */
+  const rows = useRef(new Map<string, LayoutRectangle>());
+
+  const measureRow = useCallback(
+    (productId: string, frame: LayoutRectangle) => {
+      rows.current.set(productId, frame);
+    },
+    [],
+  );
+
+  /**
+   * Hands the confirmed items up, then gets out of the way.
+   *
+   * The measuring has to happen now. Once this sheet dismisses the rows are
+   * unmounted and there is nothing left to ask where it was, so each item
+   * carries its own origin and the screen launches the flights after the sheet
+   * is gone.
    */
   const confirmAll = useCallback(() => {
-    order.addable.forEach((match, index) => {
-      setTimeout(() => {
-        onAddToCart(match.productId!, match.quantity);
-      }, index * 160);
+    const items: ConfirmedVoiceItem[] = order.addable.map(match => {
+      const productId = match.productId as string;
+      const frame = rows.current.get(productId);
+      return {
+        productId,
+        quantity: match.quantity,
+        origin: frame
+          ? {
+              // What flies is a square illustration, so it leaves from the
+              // middle of the row rather than its top-left corner.
+              size: FLIGHT_SIZE,
+              x: frame.x + frame.width / 2 - FLIGHT_SIZE / 2,
+              y: frame.y + frame.height / 2 - FLIGHT_SIZE / 2,
+            }
+          : undefined,
+      };
     });
     tapHandoff();
-    setTimeout(close, order.addable.length * 160 + 260);
-  }, [order.addable, onAddToCart, close]);
+    // Read before the reset below wipes it. Checkout shows it back, so the
+    // shopkeeper and the customer are looking at the same sentence when the
+    // items were matched out of Urdu or Punjabi.
+    const transcript = order.transcript || null;
+    void recorder.cancel();
+    order.reset();
+    onConfirm(items, transcript);
+  }, [order, recorder, onConfirm]);
 
   const sendOriginal = useCallback(() => {
     tapSend();
@@ -161,6 +216,7 @@ export default function VoiceOrderSheet({ visible, onClose, onAddToCart }: Props
               onConfirm={confirmAll}
               onSend={sendOriginal}
               onSetQuantity={order.setQuantity}
+              onMeasureRow={measureRow}
             />
           )}
 
@@ -268,11 +324,13 @@ function Review({
   onConfirm,
   onSend,
   onSetQuantity,
+  onMeasureRow,
 }: {
   order: ReturnType<typeof useVoiceOrder>;
   onConfirm: () => void;
   onSend: () => void;
   onSetQuantity: (index: number, quantity: number) => void;
+  onMeasureRow: (productId: string, frame: LayoutRectangle) => void;
 }) {
   const reduced = useReducedMotion();
   return (
@@ -301,6 +359,7 @@ function Review({
               <ItemRow
                 match={match}
                 onSetQuantity={next => onSetQuantity(index, next)}
+                onMeasure={onMeasureRow}
               />
             </Animated.View>
           ))}
@@ -313,13 +372,13 @@ function Review({
         {order.addable.length > 0 ? (
           <PressableScale
             accessibilityRole="button"
-            accessibilityLabel={`Confirm and add ${order.addable.length} items`}
+            accessibilityLabel={`Add ${order.addable.length} items to the cart and check out`}
             onPress={onConfirm}
             scaleTo={0.96}
             style={s.primary}
           >
             <Text style={s.primaryText}>
-              Confirm &amp; add {order.addable.length}
+              Add {order.addable.length} &amp; checkout
             </Text>
           </PressableScale>
         ) : null}
@@ -349,15 +408,33 @@ function Review({
 function ItemRow({
   match,
   onSetQuantity,
+  onMeasure,
 }: {
   match: CatalogMatch;
   onSetQuantity: (quantity: number) => void;
+  onMeasure: (productId: string, frame: LayoutRectangle) => void;
 }) {
   const matched = Boolean(match.productId);
   const unsure = match.confidence !== 'high';
+  const node = useRef<View>(null);
+
+  // Re-measured on every layout: the list reflows as quantities change, and
+  // rows above this one can disappear.
+  const measure = useCallback(() => {
+    const id = match.productId;
+    if (!id) return;
+    node.current?.measureInWindow((x, y, width, height) => {
+      if (width > 0 && height > 0) onMeasure(id, { x, y, width, height });
+    });
+  }, [match.productId, onMeasure]);
 
   return (
-    <View style={[s.item, !matched && s.itemUnmatched]}>
+    <View
+      ref={node}
+      collapsable={false}
+      onLayout={measure}
+      style={[s.item, !matched && s.itemUnmatched]}
+    >
       <View style={s.itemText}>
         <Text style={[s.itemName, !matched && s.itemNameMuted]} numberOfLines={1}>
           {match.productName ?? match.query}
@@ -403,6 +480,9 @@ function ItemRow({
     </View>
   );
 }
+
+/** The size a product card sends, so both flights read as the same thing. */
+const FLIGHT_SIZE = 56;
 
 const s = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0B1F2A66' },

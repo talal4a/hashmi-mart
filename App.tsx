@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import RootNavigator from './src/navigation/RootNavigator';
 import ErrorBoundary from './src/components/ErrorBoundary';
+import { CartProvider } from './src/state/cart';
 import { configureGoogleSignIn } from './src/services/googleAuth';
 import { preloadCarouselImages } from './src/utils/imageCache';
 
@@ -32,7 +33,11 @@ function App() {
         <NavigationContainer>
         <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
         <ErrorBoundary>
-          <RootNavigator />
+          {/* Above the navigator: Home fills the cart and Checkout spends it,
+              and they are separate routes. */}
+          <CartProvider>
+            <RootNavigator />
+          </CartProvider>
         </ErrorBoundary>
       </NavigationContainer>
     </SafeAreaProvider>

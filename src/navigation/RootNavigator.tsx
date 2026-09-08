@@ -8,6 +8,7 @@ import SignupScreen from '../screens/SignupScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 import CompleteProfileScreen from '../screens/CompleteProfileScreen';
 import SupportScreen from '../screens/SupportScreen';
+import CheckoutScreen from '../screens/CheckoutScreen';
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -18,6 +19,14 @@ export type RootStackParamList = {
   ForgotPassword: undefined;
   CompleteProfile: undefined;
   Support: undefined;
+  /**
+   * `source` and `transcript` describe where the basket came from, not what is
+   * in it — the cart itself lives in `CartProvider`, so quantities are never
+   * copied into navigation params where an edit made here could not get back.
+   */
+  Checkout:
+    | { source?: 'voice' | 'browse'; transcript?: string | null }
+    | undefined;
 };
 
 const slideFromRight: NativeStackNavigationOptions = {
@@ -85,6 +94,13 @@ export default function RootNavigator() {
         name="Support"
         component={SupportScreen}
         options={{ ...slideFromBottom, gestureEnabled: true }}
+      />
+      {/* Checkout slides in from the side: it is a step forward in a flow, and
+          going back to the cart has to feel like going back. */}
+      <Stack.Screen
+        name="Checkout"
+        component={CheckoutScreen}
+        options={{ ...slideFromRight, gestureEnabled: true }}
       />
     </Stack.Navigator>
   );

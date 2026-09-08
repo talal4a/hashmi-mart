@@ -12,7 +12,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CartPreview from '../components/home/CartPreview';
 import { CartFlightProvider } from '../components/home/cartFlight';
-import VoiceOrderSheet from '../components/voice/VoiceOrderSheet';
+import { useCart } from '../state/cart';
+import VoiceOrderFlow from '../components/voice/VoiceOrderFlow';
 import SectionHeader from '../components/home/SectionHeader';
 import { Rail, RailItem, SectionReveal } from '../components/home/rail/Rail';
 import VendorCard, { VENDOR_CARD_WIDTH } from '../components/home/VendorCard';
@@ -40,18 +41,10 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const blurTarget = useRef<View>(null);
   const [cartOpen, setCartOpen] = useState(false);
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [voiceOpen, setVoiceOpen] = useState(false);
-  const adjustQuantity = useCallback((id: string, delta: number) => {
-    setQuantities(previous => ({
-      ...previous,
-      [id]: Math.max(0, (previous[id] ?? 0) + delta),
-    }));
-  }, []);
-  const cartCount = Object.values(quantities).reduce(
-    (sum, quantity) => sum + quantity,
-    0,
-  );
+  // The cart lives above the navigator now, because Checkout is a route and a
+  // basket held in this screen's state could not be carried to it.
+  const { quantities, count: cartCount, adjust: adjustQuantity } = useCart();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const openSupport = useCallback(
@@ -160,14 +153,11 @@ export default function HomeScreen() {
           cartCount={cartCount}
           onOpenCart={() => setCartOpen(true)}
         />
-        <VoiceOrderSheet
+        {/* Owns what happens after a spoken order is confirmed: the items
+            fly into the cart, then checkout opens. */}
+        <VoiceOrderFlow
           visible={voiceOpen}
           onClose={() => setVoiceOpen(false)}
-          // Voice items go through the same path a tapped + does, so the cart
-          // has one way in and the fly-to-cart reaction fires for both.
-          onAddToCart={(productId, quantity) =>
-            adjustQuantity(productId, quantity)
-          }
         />
         <CartPreview
           visible={cartOpen}
