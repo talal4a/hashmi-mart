@@ -220,6 +220,14 @@ export default function useVoiceOrder() {
     ...state,
     addable,
     hasRecording: recording.current !== null,
+    /**
+     * The recording itself, so checkout can play back what was said.
+     *
+     * The local file, not the uploaded one: the confirmed path never uploads,
+     * and a customer checking the app heard them right should not have to wait
+     * on a network round trip to find out.
+     */
+    recording: recording.current,
     interpret,
     setQuantity,
     sendToStore,

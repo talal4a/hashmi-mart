@@ -30,6 +30,8 @@ export type RootStackParamList = {
         transcript?: string | null;
         /** Spoken items we do not stock, so checkout can say so. */
         missed?: string[];
+        /** The local recording, so checkout can play back what was said. */
+        recording?: { uri: string; durationMs: number };
       }
     | undefined;
 };

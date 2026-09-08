@@ -53,6 +53,15 @@ export type ConfirmedVoiceItem = {
   origin?: { x: number; y: number; size: number };
 };
 
+/** Everything about the order that is not an item. */
+export type ConfirmedVoiceOrder = {
+  transcript: string | null;
+  /** Things that were asked for and are not on the shelf. */
+  missed: string[];
+  /** The recording, so checkout can play back what was actually said. */
+  recording: { uri: string; durationMs: number } | null;
+};
+
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -64,12 +73,7 @@ type Props = {
    * Modal is its own window, drawn above the flight layer, so anything launched
    * while this sheet is up would travel behind it.
    */
-  onConfirm: (
-    items: ConfirmedVoiceItem[],
-    transcript: string | null,
-    /** Things that were asked for and are not on the shelf. */
-    missed: string[],
-  ) => void;
+  onConfirm: (items: ConfirmedVoiceItem[], order: ConfirmedVoiceOrder) => void;
 };
 
 export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) {
@@ -175,9 +179,14 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
     const missed = order.matches
       .filter(match => !match.productId)
       .map(match => match.query);
+    const recording = order.recording
+      ? { uri: order.recording.uri, durationMs: order.recording.durationMs }
+      : null;
+    // Note the order: the sheet's own recorder is released, but the file it
+    // wrote is not touched. Checkout plays it back.
     void recorder.cancel();
     order.reset();
-    onConfirm(items, transcript, missed);
+    onConfirm(items, { transcript, missed, recording });
   }, [order, recorder, onConfirm, cancelHandover]);
 
   /**
@@ -418,11 +427,14 @@ function Review({
         </ScrollView>
       ) : null}
 
-      {/* Always present, whatever the AI managed. This is the order that
-          cannot fail to be placeable. */}
+      {/* One outcome or the other, never both.
+          The recording is the fallback for an order the app could not read,
+          and offering it beside items that are already on their way to the
+          cart reads as a choice the customer has to make — which is how
+          speaking a perfectly stocked order ended on a screen promising a
+          phone call back. When we know what was wanted, we get it; when we do
+          not, the recording is still a complete order on its own. */}
       <View style={s.actions}>
-        {/* No button, because there is nothing left to decide: the items are
-            already on their way. Announced rather than asked. */}
         {order.addable.length > 0 ? (
           <View
             accessibilityRole="progressbar"
@@ -435,18 +447,17 @@ function Review({
               {order.addable.length === 1 ? 'item' : 'items'} to your cart…
             </Text>
           </View>
-        ) : null}
-        <PressableScale
-          accessibilityRole="button"
-          accessibilityLabel="Send voice order to the store"
-          onPress={onSend}
-          scaleTo={0.96}
-          style={order.addable.length > 0 ? s.ghostWide : s.primary}
-        >
-          <Text style={order.addable.length > 0 ? s.ghostText : s.primaryText}>
-            Send voice to store
-          </Text>
-        </PressableScale>
+        ) : (
+          <PressableScale
+            accessibilityRole="button"
+            accessibilityLabel="Send voice order to the store"
+            onPress={onSend}
+            scaleTo={0.96}
+            style={s.primary}
+          >
+            <Text style={s.primaryText}>Send voice to store</Text>
+          </PressableScale>
+        )}
       </View>
     </View>
   );
@@ -660,12 +671,6 @@ const s = StyleSheet.create({
   primaryText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
   ghost: {
     flex: 1,
-    alignItems: 'center',
-    paddingVertical: 13,
-    borderRadius: 22,
-    backgroundColor: '#E7F4FA',
-  },
-  ghostWide: {
     alignItems: 'center',
     paddingVertical: 13,
     borderRadius: 22,
