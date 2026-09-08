@@ -1,14 +1,16 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { BlurTargetView } from 'expo-blur';
 import HomeBottomNav, {
   TAB_BAR_HEIGHT,
   TAB_BAR_GAP,
+  TAB_BAR_RISE,
 } from '../components/home/HomeBottomNav';
 import { ScrollView, StatusBar, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import CartPreview from '../components/home/CartPreview';
 import SectionHeader from '../components/home/SectionHeader';
 import { Rail, RailItem, SectionReveal } from '../components/home/rail/Rail';
 import VendorCard, { VENDOR_CARD_WIDTH } from '../components/home/VendorCard';
@@ -35,6 +37,18 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const blurTarget = useRef<View>(null);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const adjustQuantity = useCallback((id: string, delta: number) => {
+    setQuantities(previous => ({
+      ...previous,
+      [id]: Math.max(0, (previous[id] ?? 0) + delta),
+    }));
+  }, []);
+  const cartCount = Object.values(quantities).reduce(
+    (sum, quantity) => sum + quantity,
+    0,
+  );
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const openSupport = useCallback(
@@ -52,7 +66,12 @@ export default function HomeScreen() {
             s.content,
             {
               paddingTop: insets.top + 12,
-              paddingBottom: TAB_BAR_HEIGHT + insets.bottom + TAB_BAR_GAP + 24,
+              paddingBottom:
+                TAB_BAR_HEIGHT +
+                TAB_BAR_RISE +
+                insets.bottom +
+                TAB_BAR_GAP +
+                24,
             },
           ]}
         >
@@ -94,7 +113,11 @@ export default function HomeScreen() {
               <Rail itemWidth={PRODUCT_CARD_WIDTH} gap={12}>
                 {freshPicks.map((item, index) => (
                   <RailItem key={item.id} index={index}>
-                    <FreshProductCard item={item} />
+                    <FreshProductCard
+                      item={item}
+                      quantity={quantities[item.id] ?? 0}
+                      onAdjust={delta => adjustQuantity(item.id, delta)}
+                    />
                   </RailItem>
                 ))}
               </Rail>
@@ -117,10 +140,21 @@ export default function HomeScreen() {
         style={{
           position: 'absolute',
           right: 18,
-          bottom: TAB_BAR_HEIGHT + TAB_BAR_GAP + insets.bottom + 20,
+          bottom:
+            TAB_BAR_HEIGHT + TAB_BAR_RISE + TAB_BAR_GAP + insets.bottom + 20,
         }}
       />
-      <HomeBottomNav blurTarget={blurTarget} />
+      <HomeBottomNav
+        blurTarget={blurTarget}
+        cartCount={cartCount}
+        onOpenCart={() => setCartOpen(true)}
+      />
+      <CartPreview
+        visible={cartOpen}
+        quantities={quantities}
+        onAdjust={adjustQuantity}
+        onClose={() => setCartOpen(false)}
+      />
     </View>
   );
 }

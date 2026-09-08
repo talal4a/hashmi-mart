@@ -27,8 +27,21 @@ const STEPPER_COLLAPSED = 34;
 const STEPPER_EXPANDED = 82;
 
 /** Round "+" that grows into a quantity stepper once the item is in the cart. */
-function AddControl({ label }: { label: string }) {
-  const [qty, setQty] = useState(0);
+function AddControl({
+  label,
+  quantity,
+  onAdjust,
+}: {
+  label: string;
+  quantity?: number;
+  onAdjust?: (delta: number) => void;
+}) {
+  const [localQty, setQty] = useState(0);
+  const qty = quantity ?? localQty;
+  const adjust = (delta: number) => {
+    if (onAdjust) onAdjust(delta);
+    else setQty(value => Math.max(0, value + delta));
+  };
   const reducedMotion = useReducedMotion();
   const open = useSharedValue(0);
   const bump = useSharedValue(1);
@@ -80,7 +93,7 @@ function AddControl({ label }: { label: string }) {
           accessibilityLabel={`Add ${label} to cart`}
           onPress={() => {
             punch();
-            setQty(1);
+            adjust(1);
           }}
           hitSlop={6}
           style={[StyleSheet.absoluteFill, a.centre]}
@@ -99,7 +112,7 @@ function AddControl({ label }: { label: string }) {
           accessibilityLabel={`Remove one ${label}`}
           onPress={() => {
             punch();
-            setQty(n => Math.max(0, n - 1));
+            adjust(-1);
           }}
           hitSlop={4}
           style={a.step}
@@ -114,7 +127,7 @@ function AddControl({ label }: { label: string }) {
           accessibilityLabel={`Add another ${label}`}
           onPress={() => {
             punch();
-            setQty(n => n + 1);
+            adjust(1);
           }}
           hitSlop={4}
           style={a.step}
@@ -168,9 +181,13 @@ function SaveButton({ label }: { label: string }) {
 export default function FreshProductCard({
   item,
   width = PRODUCT_CARD_WIDTH,
+  quantity,
+  onAdjust,
 }: {
   item: Product;
   width?: number;
+  quantity?: number;
+  onAdjust?: (delta: number) => void;
 }) {
   const reducedMotion = useReducedMotion();
   const scale = useSharedValue(1);
@@ -240,7 +257,11 @@ export default function FreshProductCard({
               <Text style={p.price}>Rs. {item.price}</Text>
               {item.was ? <Text style={p.was}>Rs. {item.was}</Text> : null}
             </View>
-            <AddControl label={item.name} />
+            <AddControl
+              label={item.name}
+              quantity={quantity}
+              onAdjust={onAdjust}
+            />
           </View>
         </View>
       </Pressable>

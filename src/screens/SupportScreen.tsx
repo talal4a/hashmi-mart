@@ -1,7 +1,9 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useEffect, useCallback, useMemo, useRef, useState } from 'react';
 import {
+  AppState,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -10,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -22,12 +24,16 @@ import Animated, {
 import type { RootStackParamList } from '../navigation/RootNavigator';
 import useProfileIdentity from '../hooks/useProfileIdentity';
 import useSupportChat from '../hooks/useSupportChat';
+import {
+  VoicePlaybackProvider,
+  useVoicePlayback,
+} from '../components/support/VoicePlaybackContext';
+import AudioBoundary from '../components/voice/AudioBoundary';
 import useVoiceRecorder from '../hooks/useVoiceRecorder';
 import { AVATARS } from '../components/profile/avatars/catalog';
 import { tapRecordStart, tapSend } from '../components/voice/haptics';
 import VoiceRecorder from '../components/voice/VoiceRecorder';
 import SupportHeader from '../components/support/SupportHeader';
-import HashmiAvatar from '../components/support/HashmiAvatar';
 import ChatMessage, {
   type UserIdentity,
 } from '../components/support/ChatMessage';
@@ -44,20 +50,6 @@ import type { QuickAction } from '../types/support';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-/**
- * Hashmi AI Support.
- *
- * The screen owns three things and delegates the rest: who the user is, where a
- * tapped chip flies to, and how the keyboard behaves. Conversation state lives
- * in `useSupportChat`, the microphone in `useVoiceRecorder`, and every piece of
- * motion in the component that owns the thing being animated — which is what
- * keeps this file readable at the length the feature actually is.
- *
- * Identity comes from the existing profile document (PRD section 6.3): no
- * placeholder name, no invented avatar. A user who has not finished their
- * profile still gets their initials and their real first name from Firebase
- * Auth, which is better than "Alex" and better than a blank disc.
- */
 export default function SupportScreen() {
   const navigation = useNavigation<Nav>();
   const insets = useSafeAreaInsets();
@@ -66,12 +58,25 @@ export default function SupportScreen() {
 
   const { user, profile } = useProfileIdentity();
   const chat = useSupportChat();
-  const recorder = useVoiceRecorder();
+  const focused = useIsFocused();
+  const [recorderSession, setRecorderSession] = useState(0);
+  const [startingRecorder, setStartingRecorder] = useState(false);
+  const [foreground, setForeground] = useState(
+    AppState.currentState === 'active',
+  );
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', value =>
+      setForeground(value === 'active'),
+    );
+    return () => sub.remove();
+  }, []);
+  const audioEnabled = focused && foreground;
 
   const scroller = useRef<ScrollView>(null);
-  const [flight, setFlight] = useState<{ label: string; from: ChipRect } | null>(
-    null,
-  );
+  const [flight, setFlight] = useState<{
+    label: string;
+    from: ChipRect;
+  } | null>(null);
 
   const identity: UserIdentity = useMemo(
     () => ({
@@ -121,18 +126,6 @@ export default function SupportScreen() {
     [send, reduced],
   );
 
-  const startRecording = useCallback(async () => {
-    const ok = await recorder.start();
-    if (ok) tapRecordStart();
-  }, [recorder]);
-
-  const sendRecording = useCallback(async () => {
-    const recording = await recorder.stop();
-    if (!recording) return;
-    tapSend();
-    await chat.sendVoice(recording);
-  }, [recorder, chat]);
-
   const generating = chat.pending || chat.live !== null;
   const avatarState = chat.live?.content
     ? 'speaking'
@@ -148,133 +141,230 @@ export default function SupportScreen() {
   );
 
   return (
-    <View style={s.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor="#EDF8FE" />
-      <LinearGradient
-        colors={[support.washTop, support.canvas]}
-        style={s.wash}
-        pointerEvents="none"
-      />
-
-      <SupportHeader
-        onBack={() => navigation.goBack()}
-        avatarState={avatarState}
-      />
-
-      <KeyboardAvoidingView
-        style={s.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        // iOS lifts the whole view by the keyboard height, which would hide the
-        // header behind the notch without this offset. Android's adjustResize
-        // handles it at the window level, so the behaviour is left unset there.
-        keyboardVerticalOffset={insets.top + 62}
-      >
-        <ScrollView
-          ref={scroller}
-          style={s.flex}
-          contentContainerStyle={s.content}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          showsVerticalScrollIndicator={false}
-          onContentSizeChange={scrollToEnd}
-        >
-          {/* The greeting is always present: it is the assistant introducing
-              itself, not an empty state that disappears once used. */}
-          <View style={s.greeting}>
-            <View style={s.greetingHead}>
-              <HashmiAvatar size={44} state={avatarState} />
-              <Text style={s.greetingName}>Hashmi AI ✦</Text>
-            </View>
-            <Text style={s.greetingLine}>
-              Assalam-o-Alaikum, {firstName} 👋
-            </Text>
-            <Text style={s.greetingAsk}>
-              Aaj main aap ki kis cheez mein madad kar sakta hoon?
-            </Text>
-          </View>
-
-          {!chat.started ? (
-            <Animated.View exiting={reduced ? undefined : FadeOut.duration(160)}>
-              <QuickActions onSelect={selectAction} disabled={generating} />
-            </Animated.View>
-          ) : null}
-
-          <View style={s.thread}>
-            {chat.messages.map(message => (
-              <View key={message.id} style={s.turn}>
-                {message.role === 'assistant' ? (
-                  <>
-                    <AIMessage content={message.content} phase="complete" />
-                    {message.handoff ? (
-                      <HandoffCard message={handoffMessage(firstName)} />
-                    ) : null}
-                  </>
-                ) : (
-                  <ChatMessage
-                    message={message}
-                    user={identity}
-                    displayName={firstName}
-                  />
-                )}
-              </View>
-            ))}
-
-            {chat.live ? (
-              <AIMessage
-                content={chat.live.content}
-                phase={chat.live.content ? 'streaming' : 'thinking'}
-              />
-            ) : null}
-
-            {chat.error ? (
-              <ErrorRetry
-                message={chat.error}
-                onRetry={chat.retry}
-                retrying={chat.retrying}
-                offerWhatsApp={chat.error !== 'Stopped.'}
-              />
-            ) : null}
-          </View>
-        </ScrollView>
-
-        <View style={[s.dock, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-          {recorder.recording ? (
-            <VoiceRecorder
-              levels={recorder.levels}
-              durationMs={recorder.durationMs}
-              onCancel={recorder.cancel}
-              onSend={sendRecording}
-            />
-          ) : (
-            <ChatComposer
-              onSend={send}
-              onStartRecording={startRecording}
-              onStop={chat.stop}
-              generating={generating}
-            />
-          )}
-
-          {recorder.status === 'denied' ? (
-            <Animated.Text
-              entering={reduced ? undefined : FadeIn.duration(200)}
-              style={s.micDenied}
-            >
-              Microphone access is off. Enable it in Settings to send a voice
-              note, or type your question instead.
-            </Animated.Text>
-          ) : null}
-        </View>
-      </KeyboardAvoidingView>
-
-      {flight ? (
-        <ChipFlight
-          label={flight.label}
-          from={flight.from}
-          to={flightTarget}
-          onDone={() => setFlight(null)}
+    <VoicePlaybackProvider enabled={audioEnabled}>
+      <View style={s.screen}>
+        <StatusBar barStyle="dark-content" backgroundColor="#EDF8FE" />
+        <LinearGradient
+          colors={[support.washTop, support.canvas]}
+          style={s.wash}
+          pointerEvents="none"
         />
+
+        <SupportHeader
+          onBack={() => navigation.goBack()}
+          avatarState={avatarState}
+        />
+
+        <KeyboardAvoidingView
+          style={s.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          // iOS lifts the whole view by the keyboard height, which would hide the
+          // header behind the notch without this offset. Android's adjustResize
+          // handles it at the window level, so the behaviour is left unset there.
+          keyboardVerticalOffset={insets.top + 62}
+        >
+          <ScrollView
+            ref={scroller}
+            style={s.flex}
+            contentContainerStyle={s.content}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            showsVerticalScrollIndicator={false}
+            onContentSizeChange={scrollToEnd}
+          >
+            {/* The greeting is always present: it is the assistant introducing
+              itself, not an empty state that disappears once used. */}
+            <View style={s.greeting}>
+              <Text style={s.greetingLine}>
+                Assalam-o-Alaikum, {firstName} 👋
+              </Text>
+              <Text style={s.greetingAsk}>
+                Aaj main aap ki kis cheez mein madad kar sakta hoon?
+              </Text>
+            </View>
+
+            {!chat.started ? (
+              <Animated.View
+                exiting={reduced ? undefined : FadeOut.duration(160)}
+              >
+                <QuickActions onSelect={selectAction} disabled={generating} />
+              </Animated.View>
+            ) : null}
+
+            <View style={s.thread}>
+              {chat.messages.map(message => (
+                <View key={message.id} style={s.turn}>
+                  {message.role === 'assistant' ? (
+                    <>
+                      <AIMessage content={message.content} phase="complete" />
+                      {message.handoff ? (
+                        <HandoffCard message={handoffMessage(firstName)} />
+                      ) : null}
+                    </>
+                  ) : (
+                    <ChatMessage
+                      message={message}
+                      user={identity}
+                      displayName={firstName}
+                      onRetryVoice={chat.retry}
+                      onDeleteVoice={chat.deleteVoice}
+                      busy={chat.pending}
+                    />
+                  )}
+                </View>
+              ))}
+
+              {chat.live ? (
+                <AIMessage
+                  content={chat.live.content}
+                  phase={chat.live.content ? 'streaming' : 'thinking'}
+                />
+              ) : null}
+
+              {chat.error ? (
+                <ErrorRetry
+                  message={chat.error}
+                  onRetry={() => chat.retry()}
+                  retrying={chat.retrying}
+                  offerWhatsApp={chat.error !== 'Stopped.'}
+                />
+              ) : null}
+            </View>
+          </ScrollView>
+
+          <View
+            style={[s.dock, { paddingBottom: Math.max(insets.bottom, 10) }]}
+          >
+            {focused && (foreground || startingRecorder) ? (
+              <AudioBoundary>
+                <SupportVoiceRecorder
+                  key={recorderSession}
+                  onReset={() => setRecorderSession(value => value + 1)}
+                  onStartingChange={setStartingRecorder}
+                  onSend={send}
+                  onSendVoice={chat.sendVoice}
+                  onStop={chat.stop}
+                  generating={generating}
+                />
+              </AudioBoundary>
+            ) : null}
+          </View>
+        </KeyboardAvoidingView>
+
+        {flight ? (
+          <ChipFlight
+            label={flight.label}
+            from={flight.from}
+            to={flightTarget}
+            onDone={() => setFlight(null)}
+          />
+        ) : null}
+      </View>
+    </VoicePlaybackProvider>
+  );
+}
+
+// Focus owns the native recorder lifetime; meter ticks only rerender this dock.
+function SupportVoiceRecorder({
+  onStartingChange,
+  onReset,
+  onSend,
+  onSendVoice,
+  onStop,
+  generating,
+}: {
+  onStartingChange: (starting: boolean) => void;
+  onReset: () => void;
+  onSend: (text: string) => void;
+  onSendVoice: ReturnType<typeof useSupportChat>['sendVoice'];
+  onStop: () => void;
+  generating: boolean;
+}) {
+  const recorder = useVoiceRecorder();
+  const playback = useVoicePlayback();
+  useEffect(() => () => playback.setRecording(false), [playback.setRecording]);
+  useEffect(() => {
+    playback.setRecording(
+      ['requesting', 'recording', 'stopping', 'ready'].includes(
+        recorder.status,
+      ),
+    );
+  }, [recorder.status, playback.setRecording]);
+  const reduced = useReducedMotion();
+  const startRecording = useCallback(async () => {
+    playback.select(null);
+    // Permission activities temporarily background Android. Keep this owner
+    // alive until the request resolves so the first tap can finish.
+    onStartingChange(true);
+    try {
+      const ok = await recorder.start();
+      if (ok) tapRecordStart();
+    } finally {
+      onStartingChange(false);
+    }
+  }, [recorder, playback, onStartingChange]);
+
+  const sendRecording = useCallback(async () => {
+    const recording = await recorder.stop();
+    if (!recording) return;
+    tapSend();
+    await onSendVoice(recording);
+  }, [recorder, onSendVoice, playback]);
+
+  return (
+    <>
+      {recorder.hasRecording ? (
+        <VoiceRecorder
+          compact
+          levels={recorder.levels}
+          durationMs={recorder.durationMs}
+          onCancel={recorder.cancel}
+          recording={recorder.recording}
+          busy={recorder.status === 'stopping'}
+          onSend={sendRecording}
+        />
+      ) : (
+        <ChatComposer
+          onSend={onSend}
+          disabled={
+            recorder.status === 'requesting' || recorder.status === 'error'
+          }
+          onStartRecording={startRecording}
+          onStop={onStop}
+          generating={generating}
+        />
+      )}
+
+      {recorder.status === 'error' ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Reset microphone"
+          onPress={onReset}
+          style={{ padding: 8 }}
+        >
+          <Text style={s.micDenied}>
+            Recording couldn't finish. Tap here to reset the microphone.
+          </Text>
+        </Pressable>
       ) : null}
-    </View>
+      {recorder.status === 'ready' ? (
+        <Text style={s.micDenied}>
+          Two-minute limit reached. Your note is ready to send.
+        </Text>
+      ) : null}
+      {recorder.status === 'requesting' ? (
+        <Text style={s.micDenied}>Preparing your microphone…</Text>
+      ) : null}
+      {recorder.status === 'denied' ? (
+        <Animated.Text
+          entering={reduced ? undefined : FadeIn.duration(200)}
+          style={s.micDenied}
+        >
+          Microphone access is off. Enable it in Settings to send a voice note,
+          or type your question instead.
+        </Animated.Text>
+      ) : null}
+    </>
   );
 }
 
@@ -289,13 +379,6 @@ const s = StyleSheet.create({
   wash: { position: 'absolute', top: 0, left: 0, right: 0, height: 420 },
   content: { padding: 16, paddingBottom: 24, gap: 16 },
   greeting: { gap: 4, paddingTop: 6 },
-  greetingHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  greetingName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: support.accentDeep,
-    letterSpacing: -0.2,
-  },
   greetingLine: {
     fontSize: 20,
     fontWeight: '700',

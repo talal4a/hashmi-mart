@@ -1,17 +1,11 @@
 import Svg, { Path } from 'react-native-svg';
-import Animated, {
-  FadeIn,
-  FadeOut,
-  useReducedMotion,
-} from 'react-native-reanimated';
-import { useIsFocused } from '@react-navigation/native';
+import Animated from 'react-native-reanimated';
 import {
   HeartbeatBar,
   HeartbeatRing,
   useVoiceHeartbeat,
 } from './voiceHeartbeat';
 import {
-  AppState,
   Image,
   Platform,
   Pressable,
@@ -31,9 +25,9 @@ import {
   Leaf,
   Mic,
   Search,
-  ShoppingCart,
 } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import VoiceOrderCopy from './VoiceOrderCopy';
+import { useState } from 'react';
 import { quickActions } from '../../data/groceryHome';
 import { useWhatsAppHandoff } from '../support/WhatsAppButton';
 import { grocery as c, softShadow } from './groceryTheme';
@@ -63,100 +57,18 @@ export function HomeHeader() {
             <Bell size={23} color={c.ink} />
             <View style={s.dot} />
           </View>
-          <View style={s.circle} accessibilityLabel="Cart, 3 items">
-            <ShoppingCart size={24} color={c.ink} />
-            <View style={s.count}>
-              <Text style={s.countText}>3</Text>
-            </View>
-          </View>
         </View>
       </View>
       <Text style={s.tagline}>Fresh Picks. Local Stores. Happy You.</Text>
     </View>
   );
 }
-const assistantPrompts = [
-  'Hi there! Need a hand?',
-  'What’s on your shopping list?',
-  'Your shopping assistant is here.',
-];
-
-function AssistantGreeting({ onDismiss }: { onDismiss: () => void }) {
-  const [promptIndex, setPromptIndex] = useState(0);
-  const focused = useIsFocused();
-  const reducedMotion = useReducedMotion();
-
-  useEffect(() => {
-    if (!focused) return;
-    let timer: ReturnType<typeof setInterval> | undefined;
-    const stop = () => clearInterval(timer);
-    const start = () => {
-      stop();
-      timer = setInterval(() => setPromptIndex(index => index + 1), 4000);
-    };
-    if (AppState.currentState === 'active') start();
-    const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active') start();
-      else stop();
-    });
-    return () => {
-      stop();
-      subscription.remove();
-    };
-  }, [focused]);
-
-  useEffect(() => {
-    if (promptIndex >= assistantPrompts.length) onDismiss();
-  }, [promptIndex, onDismiss]);
-
-  return (
-    <Animated.View
-      entering={reducedMotion ? undefined : FadeIn.duration(250)}
-      exiting={reducedMotion ? undefined : FadeOut.duration(200)}
-      style={s.aiBubble}
-    >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${assistantPrompts[Math.min(promptIndex, assistantPrompts.length - 1)]} Dismiss greeting`}
-        onPress={onDismiss}
-        hitSlop={8}
-        style={s.aiBubbleContent}
-      >
-        <View style={s.aiGreetingDot} />
-        <Animated.Text
-          key={promptIndex}
-          entering={reducedMotion ? undefined : FadeIn.duration(300)}
-          style={s.aiBubbleText}
-        >
-          {assistantPrompts[Math.min(promptIndex, assistantPrompts.length - 1)]}
-        </Animated.Text>
-      </Pressable>
-      <Svg
-        pointerEvents="none"
-        width={24}
-        height={16}
-        viewBox="0 0 24 16"
-        style={s.aiBubblePointer}
-      >
-        <Path
-          d="M1 0 C4 7 10 12 16 15 C15 9 18 4 23 0"
-          fill="#F4FCFF"
-          stroke="#CDEDF7"
-          strokeWidth={1}
-          strokeLinejoin="round"
-        />
-      </Svg>
-    </Animated.View>
-  );
-}
-
 export function HomeSearchBar({
   onOpenSupport,
 }: {
   onOpenSupport?: () => void;
 }) {
   const [barWidth, setBarWidth] = useState(0);
-  const [hint, setHint] = useState(true);
   // The white field curves around the 52px AI circle with a 6px gap.
   const centreX = barWidth - 26;
   const meetX = centreX - Math.sqrt(32 ** 2 - 28 ** 2);
@@ -183,18 +95,11 @@ export function HomeSearchBar({
         <Pressable
           accessibilityLabel="AI support chat"
           accessibilityRole="button"
-          onPress={() => {
-            // The greeting bubble is what this control used to do on its own.
-            // Dismissing it here as well keeps it from reappearing over the
-            // conversation when the user comes back.
-            setHint(false);
-            onOpenSupport?.();
-          }}
+          onPress={onOpenSupport}
           style={s.aiBtn}
         >
           <Bot size={23} color="white" strokeWidth={1.8} />
         </Pressable>
-        {hint ? <AssistantGreeting onDismiss={() => setHint(false)} /> : null}
       </View>
     </View>
   );
@@ -244,14 +149,7 @@ export function VoiceOrderCard() {
           Voice Order
         </Text>
         <View style={s.voiceDescriptionRow}>
-          <Text
-            style={[
-              s.voiceDescription,
-              compact && { fontSize: 10, lineHeight: 14 },
-            ]}
-          >
-            Say what you need,{'\n'}we’ll add it to your cart
-          </Text>
+          <VoiceOrderCopy />
           <View style={s.voiceArrow}>
             <ChevronRight size={17} color="#05B8F2" />
           </View>
@@ -432,19 +330,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'white',
   },
-  count: {
-    position: 'absolute',
-    right: -2,
-    top: -4,
-    width: 21,
-    height: 21,
-    borderRadius: 12,
-    backgroundColor: '#FF443C',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  countText: { fontSize: 12, color: 'white', fontWeight: '600' },
-  searchWrap: { height: 100, paddingTop: 44 },
+  searchWrap: { height: 56 },
   searchInner: { height: 56 },
   searchBg: { position: 'absolute', top: 0, left: 0 },
   searchRow: {
@@ -466,39 +352,6 @@ const s = StyleSheet.create({
     backgroundColor: c.blue,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  aiBubble: {
-    position: 'absolute',
-    right: 0,
-    bottom: 72,
-    backgroundColor: '#F4FCFF',
-    borderWidth: 1,
-    borderColor: '#CDEDF7',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  aiBubbleContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  aiGreetingDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: c.blue,
-  },
-  aiBubbleText: {
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: '500',
-    color: '#527B8A',
-  },
-  aiBubblePointer: {
-    position: 'absolute',
-    right: 18,
-    bottom: -15,
   },
   wa: {
     width: 56,
@@ -532,13 +385,6 @@ const s = StyleSheet.create({
     letterSpacing: -0.6,
   },
   voiceDescriptionRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  voiceDescription: {
-    flexShrink: 1,
-    color: '#69818D',
-    fontSize: 11,
-    lineHeight: 15,
-    letterSpacing: -0.2,
-  },
   voiceArrow: {
     width: 25,
     height: 25,

@@ -32,6 +32,7 @@ import { support } from './supportTheme';
  */
 
 type Props = {
+  active?: boolean;
   /** 0 = wave; 1 = gathered at the centre and faded. Drive it to open an answer. */
   collapse?: SharedValue<number>;
 };
@@ -44,10 +45,12 @@ function Dot({
   phase,
   index,
   collapse,
+  reduced,
 }: {
   phase: SharedValue<number>;
   index: number;
   collapse?: SharedValue<number>;
+  reduced: boolean;
 }) {
   // Centre-relative, so collapsing is a slide toward 0 rather than toward a
   // hard-coded pixel the caller would have to know about.
@@ -63,8 +66,12 @@ function Dot({
       opacity: (0.45 + 0.55 * (wave * 0.5 + 0.5)) * (1 - gathered),
       transform: [
         { translateX: offset * (1 - gathered) - offset },
-        { translateY: wave * -3 * (1 - gathered) },
-        { scale: (0.85 + 0.25 * (wave * 0.5 + 0.5)) * (1 - gathered * 0.4) },
+        { translateY: reduced ? 0 : wave * -3 * (1 - gathered) },
+        {
+          scale: reduced
+            ? 1
+            : (0.85 + 0.25 * (wave * 0.5 + 0.5)) * (1 - gathered * 0.4),
+        },
       ],
     };
   });
@@ -87,11 +94,18 @@ function Dot({
   );
 }
 
-export default function AIThinkingIndicator({ collapse }: Props) {
+export default function AIThinkingIndicator({
+  collapse,
+  active = true,
+}: Props) {
   const phase = useSharedValue(0);
   const reduced = useReducedMotion();
 
   useEffect(() => {
+    if (!active) {
+      cancelAnimation(phase);
+      return;
+    }
     if (reduced) {
       // Reduce Motion still needs a visible "working" state, so the wave becomes
       // a slow, uniform breath rather than nothing at all.
@@ -108,7 +122,7 @@ export default function AIThinkingIndicator({ collapse }: Props) {
       false,
     );
     return () => cancelAnimation(phase);
-  }, [phase, reduced]);
+  }, [phase, reduced, active]);
 
   return (
     <View
@@ -117,7 +131,13 @@ export default function AIThinkingIndicator({ collapse }: Props) {
       accessibilityLabel="Hashmi AI is thinking"
     >
       {Array.from({ length: DOTS }, (_, index) => (
-        <Dot key={index} phase={phase} index={index} collapse={collapse} />
+        <Dot
+          key={index}
+          phase={phase}
+          index={index}
+          collapse={collapse}
+          reduced={reduced}
+        />
       ))}
     </View>
   );

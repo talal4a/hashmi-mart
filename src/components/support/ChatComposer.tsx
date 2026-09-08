@@ -2,6 +2,8 @@ import { useCallback, useState } from 'react';
 import { Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ArrowUp, Mic, Square } from 'lucide-react-native';
 import Animated, {
+  FadeInUp,
+  FadeOutDown,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -66,7 +68,14 @@ export default function ChatComposer({
   const press = () => {
     if (generating) onStop();
     else if (hasText) send();
-    else onStartRecording();
+    else {
+      if (!reduced)
+        squeeze.value = withSequence(
+          withTiming(1, { duration: 90 }),
+          withTiming(0, { duration: 160 }),
+        );
+      onStartRecording();
+    }
   };
 
   const barStyle = useAnimatedStyle(() => ({
@@ -83,41 +92,47 @@ export default function ChatComposer({
       : 'Record a voice message';
 
   return (
-    <Animated.View style={[s.bar, barStyle]}>
-      <TextInput
-        value={text}
-        onChangeText={setText}
-        editable={!disabled}
-        placeholder="Ask Hashmi anything..."
-        placeholderTextColor={support.faint}
-        multiline
-        // Send-on-return would fight multiline entry, and a support question is
-        // often two sentences. The button is the only send.
-        blurOnSubmit={false}
-        style={s.input}
-        accessibilityLabel="Message Hashmi AI"
-        // The field accepts Urdu and Punjabi script; direction follows content.
-        textAlignVertical="center"
-      />
-      <PressableScale
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        onPress={press}
-        disabled={disabled}
-        scaleTo={0.88}
-        style={[
-          s.action,
-          generating ? s.actionStop : hasText ? s.actionSend : s.actionMic,
-        ]}
-      >
-        {generating ? (
-          <Square size={14} color="#FFFFFF" fill="#FFFFFF" />
-        ) : hasText ? (
-          <ArrowUp size={19} color="#FFFFFF" strokeWidth={2.6} />
-        ) : (
-          <Mic size={19} color="#FFFFFF" strokeWidth={2.2} />
-        )}
-      </PressableScale>
+    <Animated.View
+      entering={reduced ? undefined : FadeInUp.duration(180)}
+      exiting={reduced ? undefined : FadeOutDown.duration(140)}
+      collapsable={false}
+    >
+      <Animated.View style={[s.bar, barStyle]}>
+        <TextInput
+          value={text}
+          onChangeText={setText}
+          editable={!disabled}
+          placeholder="Ask Hashmi anything..."
+          placeholderTextColor={support.faint}
+          multiline
+          // Send-on-return would fight multiline entry, and a support question is
+          // often two sentences. The button is the only send.
+          blurOnSubmit={false}
+          style={s.input}
+          accessibilityLabel="Message Hashmi AI"
+          // The field accepts Urdu and Punjabi script; direction follows content.
+          textAlignVertical="center"
+        />
+        <PressableScale
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          onPress={press}
+          disabled={disabled}
+          scaleTo={0.88}
+          style={[
+            s.action,
+            generating ? s.actionStop : hasText ? s.actionSend : s.actionMic,
+          ]}
+        >
+          {generating ? (
+            <Square size={14} color="#FFFFFF" fill="#FFFFFF" />
+          ) : hasText ? (
+            <ArrowUp size={19} color="#FFFFFF" strokeWidth={2.6} />
+          ) : (
+            <Mic size={19} color="#FFFFFF" strokeWidth={2.2} />
+          )}
+        </PressableScale>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -165,7 +180,7 @@ const s = StyleSheet.create({
   },
   actionSend: { backgroundColor: support.accent },
   actionMic: { backgroundColor: support.accent },
-  actionStop: { backgroundColor: support.ink },
+  actionStop: { backgroundColor: support.accent },
   note: {
     fontSize: 10.5,
     color: support.faint,

@@ -1,3 +1,5 @@
+import { File } from 'expo-file-system';
+import { fetch as expoFetch } from 'expo/fetch';
 import { auth } from '../config/firebase';
 import { SUPPORT_API_URL } from '../config/backend';
 import { streamSSE } from './sse';
@@ -17,6 +19,9 @@ export type SupportTurn = { role: ChatRole; content: string };
 
 /** What every caller gets back, whatever went wrong on the way. */
 export type SupportFailure =
+  | 'silent'
+  | 'missing-file'
+  | 'invalid-audio'
   | 'offline'
   | 'unauthenticated'
   | 'busy'
@@ -92,6 +97,8 @@ export async function askSupport(
 
 /** HTTP status to the six things the UI does differently. */
 function kindFromStatus(status: number): SupportFailure {
+  if (status === 400 || status === 413 || status === 415)
+    return 'invalid-audio';
   if (status === 401) return 'unauthenticated';
   if (status === 429) return 'busy';
   if (status === 504) return 'timeout';
@@ -101,59 +108,70 @@ function kindFromStatus(status: number): SupportFailure {
 /**
  * Sends a recording for transcription.
  *
- * The file is posted as a multipart part built from its `file://` URI, which
- * React Native's networking layer streams from disk itself. Reading it into a
- * base64 string first — the obvious approach — would hold the whole recording
- * in JS memory and inflate it by a third on the way out, for a payload that is
- * already the slowest thing in this flow on a mobile connection.
+ * Expo fetch requires a File/Blob with readable bytes. The legacy React Native
+ * `{ uri, name, type }` descriptor throws during multipart encoding, before any
+ * network request is made. Keep the native File and let Expo set the boundary.
  */
 export async function transcribeVoice(
   uri: string,
-  mimeType: string,
+  _mimeType: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const token = await idToken();
-
-  const form = new FormData();
-  // RN accepts this shape specifically and turns it into a streamed file part.
-  // The cast is unavoidable: the DOM's FormData types do not describe it.
-  form.append('file', {
-    uri,
-    name: `note.${mimeType.includes('wav') ? 'wav' : 'm4a'}`,
-    type: mimeType,
-  } as unknown as Blob);
-
-  let response: Response;
+  if (signal?.aborted) throw new SupportError('aborted');
+  let file: File;
   try {
-    response = await fetch(`${SUPPORT_API_URL}/transcribe`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        // Content-Type is deliberately unset: RN fills in the multipart
-        // boundary, and setting it by hand produces a body the Worker cannot
-        // parse.
-        Accept: 'application/json',
-      },
-      body: form,
-    });
+    file = new File(uri);
+    if (!file.exists || file.size === 0) throw new SupportError('missing-file');
   } catch {
-    throw new SupportError('offline');
+    throw new SupportError('missing-file');
   }
-
-  if (!response.ok) throw new SupportError(kindFromStatus(response.status));
-
+  const controller = new AbortController();
+  let timedOut = false;
+  const onAbort = () => controller.abort();
+  signal?.addEventListener('abort', onAbort, { once: true });
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 45_000);
+  const form = new FormData();
+  form.append('file', file);
   try {
-    const data = (await response.json()) as { text?: string };
+    const response = await expoFetch(`${SUPPORT_API_URL}/transcribe`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      body: form,
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new SupportError(kindFromStatus(response.status));
+    let data: { text?: string };
+    try {
+      data = await response.json();
+    } catch {
+      throw new SupportError('unavailable');
+    }
     if (typeof data.text !== 'string') throw new SupportError('unavailable');
     return data.text.trim();
-  } catch (error) {
-    if (error instanceof SupportError) throw error;
-    throw new SupportError('unavailable');
+  } catch (caught) {
+    if (timedOut) throw new SupportError('timeout');
+    if (signal?.aborted) throw new SupportError('aborted');
+    if (caught instanceof SupportError) throw caught;
+    throw new SupportError('offline');
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', onAbort);
   }
 }
 
 /** What the user is shown. Never a raw backend message. */
 export function supportErrorMessage(kind: SupportFailure): string {
   switch (kind) {
+    case 'silent':
+      return "Hashmi AI couldn't hear anything. Please record again.";
+    case 'missing-file':
+      return 'This recording is no longer available. Please record again.';
+    case 'invalid-audio':
+      return 'This recording could not be read. Please record a new voice note.';
     case 'offline':
       return 'You seem to be offline. Check your connection and try again.';
     case 'unauthenticated':

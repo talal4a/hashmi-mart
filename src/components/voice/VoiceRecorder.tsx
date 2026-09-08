@@ -1,9 +1,8 @@
+import { useState } from 'react';
+import { Send, Trash2 } from 'lucide-react-native';
+import { recorderReveal, recorderSend, recorderDismiss } from './voiceMotion';
 import { StyleSheet, Text, View } from 'react-native';
-import Animated, {
-  FadeIn,
-  FadeOut,
-  useReducedMotion,
-} from 'react-native-reanimated';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
 import type { SharedValue } from 'react-native-reanimated';
 import PressableScale from '../ui/PressableScale';
 import { grocery, softShadow } from '../home/groceryTheme';
@@ -29,6 +28,9 @@ type Props = {
   durationMs: number;
   onCancel: () => void;
   onSend: () => void;
+  recording?: boolean;
+  busy?: boolean;
+  compact?: boolean;
 };
 
 export default function VoiceRecorder({
@@ -36,39 +38,93 @@ export default function VoiceRecorder({
   durationMs,
   onCancel,
   onSend,
+  recording = true,
+  busy = false,
+  compact = false,
 }: Props) {
   const reduced = useReducedMotion();
+  const [sending, setSending] = useState(false);
+  if (compact) {
+    return (
+      <Animated.View
+        entering={reduced ? undefined : recorderReveal}
+        exiting={reduced ? undefined : sending ? recorderSend : recorderDismiss}
+        style={[s.tray, s.compactTray]}
+      >
+        <PressableScale
+          accessibilityRole="button"
+          accessibilityLabel="Cancel recording"
+          disabled={busy}
+          onPress={onCancel}
+          style={s.iconButton}
+        >
+          <Trash2 size={21} color={grocery.muted} />
+        </PressableScale>
+        <AnimatedMic recording={recording} compact size={24} />
+        <Text
+          style={s.compactTimer}
+          accessibilityLabel={`Recording, ${formatDuration(durationMs)}`}
+        >
+          {formatDuration(durationMs)}
+        </Text>
+        <VoiceWaveform levels={levels} height={30} />
+        <PressableScale
+          accessibilityRole="button"
+          accessibilityLabel="Send voice message"
+          disabled={busy}
+          onPress={() => {
+            setSending(true);
+            onSend();
+          }}
+          style={[s.iconButton, s.compactSend]}
+        >
+          <Send size={19} color="#FFFFFF" />
+        </PressableScale>
+      </Animated.View>
+    );
+  }
   return (
     <Animated.View
-      entering={reduced ? undefined : FadeIn.duration(180)}
-      exiting={reduced ? undefined : FadeOut.duration(140)}
+      entering={reduced ? undefined : recorderReveal}
+      exiting={reduced ? undefined : sending ? recorderSend : recorderDismiss}
       style={s.tray}
     >
       <View style={s.meterRow}>
-        <AnimatedMic recording size={44} />
+        <AnimatedMic recording={recording} size={44} />
         <VoiceWaveform levels={levels} height={38} />
       </View>
       <View style={s.controls}>
         <PressableScale
           accessibilityRole="button"
           accessibilityLabel="Cancel recording"
-          onPress={onCancel}
+          disabled={busy}
+          onPress={() => {
+            setSending(false);
+            onCancel();
+          }}
           scaleTo={0.94}
           style={s.cancel}
         >
           <Text style={s.cancelText}>Cancel</Text>
         </PressableScale>
-        <Text style={s.timer} accessibilityLabel={`Recording, ${formatDuration(durationMs)}`}>
+        <Text
+          style={s.timer}
+          accessibilityLabel={`Recording, ${formatDuration(durationMs)}`}
+        >
           {formatDuration(durationMs)}
         </Text>
         <PressableScale
           accessibilityRole="button"
           accessibilityLabel="Send voice message"
-          onPress={onSend}
+          disabled={busy}
+          onPress={() => {
+            setSending(true);
+            onSend();
+          }}
           scaleTo={0.94}
           style={s.send}
         >
-          <Text style={s.sendText}>Send</Text>
+          <Text style={s.sendText}>{busy ? 'Finishing…' : 'Send'}</Text>
         </PressableScale>
       </View>
     </Animated.View>
@@ -76,6 +132,26 @@ export default function VoiceRecorder({
 }
 
 const s = StyleSheet.create({
+  compactTray: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compactSend: { backgroundColor: grocery.blue },
+  compactTimer: {
+    fontSize: 13,
+    color: grocery.muted,
+    fontVariant: ['tabular-nums'],
+  },
   tray: {
     gap: 12,
     paddingHorizontal: 14,

@@ -32,10 +32,12 @@ type Props = {
   recording: boolean;
   size?: number;
   color?: string;
+  compact?: boolean;
 };
 
 export default function AnimatedMic({
   recording,
+  compact = false,
   size = 56,
   color = grocery.blue,
 }: Props) {
@@ -59,6 +61,10 @@ export default function AnimatedMic({
     return () => cancelAnimation(pulse);
   }, [recording, reduced, pulse]);
 
+  const recordingStyle = useAnimatedStyle(() => ({
+    opacity: recording && !reduced ? 1 - pulse.value * 0.65 : 1,
+  }));
+
   const micStyle = useAnimatedStyle(() => ({
     transform: [{ scale: 1 + pulse.value * 0.04 }],
   }));
@@ -69,6 +75,24 @@ export default function AnimatedMic({
   }));
 
   const tint = recording ? '#FF4B4B' : color;
+
+  if (compact) {
+    return (
+      <Animated.View
+        style={[
+          {
+            width: size,
+            height: size,
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
+          recordingStyle,
+        ]}
+      >
+        <Mic size={22} color={tint} strokeWidth={2.3} />
+      </Animated.View>
+    );
+  }
 
   return (
     <View style={{ width: size, height: size }}>

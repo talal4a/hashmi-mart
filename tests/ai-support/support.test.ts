@@ -1,3 +1,22 @@
+jest.mock('expo-file-system', () => ({
+  File: jest.fn(() => ({
+    exists: true,
+    size: 4,
+    name: 'note.m4a',
+    type: 'audio/mp4',
+    bytes: async () => new Uint8Array([1, 2, 3, 4]),
+  })),
+}));
+jest.mock('expo/fetch', () => ({
+  fetch: (...args: Parameters<typeof fetch>) => global.fetch(...args),
+}));
+import { convertFormDataAsync } from 'expo/src/winter/fetch/convertFormData';
+const { installFormDataPatch } = jest.requireActual<
+  typeof import('expo/src/winter/FormData')
+>('expo/src/winter/FormData');
+const NativeFormData = require('react-native/Libraries/Network/FormData')
+  .default as typeof FormData;
+
 import { Linking } from 'react-native';
 import {
   askSupport,
@@ -80,6 +99,9 @@ async function openedRequest(): Promise<FakeXHR> {
 }
 
 beforeEach(() => {
+  global.FormData = installFormDataPatch(
+    NativeFormData as unknown as typeof FormData,
+  ) as unknown as typeof FormData;
   (global as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = FakeXHR;
   FakeXHR.last = null;
   auth.currentUser = account;
@@ -141,13 +163,19 @@ describe('askSupport', () => {
 
   it('accumulates real deltas and resolves with the settled answer', async () => {
     const deltas: string[] = [];
-    const pending = askSupport('Mera order kahan hai?', [], d => deltas.push(d));
+    const pending = askSupport('Mera order kahan hai?', [], d =>
+      deltas.push(d),
+    );
     const xhr = await openedRequest();
 
     xhr.deliver(
       frame({ delta: 'Aap ka ' }) +
         frame({ delta: 'order raaste mein hai.' }) +
-        frame({ done: true, content: 'Aap ka order raaste mein hai.', handoff: false }),
+        frame({
+          done: true,
+          content: 'Aap ka order raaste mein hai.',
+          handoff: false,
+        }),
     );
 
     await expect(pending).resolves.toEqual({
@@ -160,14 +188,20 @@ describe('askSupport', () => {
   it('surfaces the handoff flag the backend decided on', async () => {
     const pending = askSupport('Refund chahiye', [], () => {});
     (await openedRequest()).deliver(
-      frame({ done: true, content: 'WhatsApp par baat karein.', handoff: true }),
+      frame({
+        done: true,
+        content: 'WhatsApp par baat karein.',
+        handoff: true,
+      }),
     );
     await expect(pending).resolves.toMatchObject({ handoff: true });
   });
 
   it('treats an empty answer as a failure instead of a message', async () => {
     const pending = askSupport('hi', [], () => {});
-    (await openedRequest()).deliver(frame({ done: true, content: '   ', handoff: false }));
+    (await openedRequest()).deliver(
+      frame({ done: true, content: '   ', handoff: false }),
+    );
     await expect(pending).rejects.toMatchObject({ kind: 'unavailable' });
   });
 
@@ -192,7 +226,7 @@ describe('askSupport', () => {
 });
 
 describe('transcribeVoice', () => {
-  it('uploads the recording as a streamed file part, not base64', async () => {
+  it('encodes actual file bytes with the installed Expo multipart encoder', async () => {
     const fetchMock = jest.fn(async () => ({
       ok: true,
       status: 200,
@@ -204,14 +238,37 @@ describe('transcribeVoice', () => {
       transcribeVoice('file:///tmp/note.m4a', 'audio/m4a'),
     ).resolves.toBe('Mera order late hai.');
 
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const [, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
     expect((init.headers as Record<string, string>).Authorization).toBe(
       'Bearer test-id-token',
     );
     expect(init.body).toBeInstanceOf(FormData);
-    // Setting Content-Type by hand loses the multipart boundary RN generates,
+    // Exercise Expo's real serializer: the old URI descriptor fails here.
+    const legacy = new FormData();
+    legacy.append('file', {
+      uri: 'file:///tmp/note.m4a',
+      name: 'note.m4a',
+      type: 'audio/m4a',
+    } as unknown as Blob);
+    await expect(convertFormDataAsync(legacy)).rejects.toThrow(
+      'Unsupported FormDataPart implementation',
+    );
+    const { body } = await convertFormDataAsync(
+      init.body as FormData,
+      'test-boundary',
+    );
+    const encoded = String.fromCharCode(...body);
+    expect(encoded).toContain('filename="note.m4a"');
+    expect(encoded).toContain('content-type: audio/mp4');
+    expect(encoded).toContain(String.fromCharCode(1, 2, 3, 4));
+    // Setting Content-Type by hand loses the multipart boundary Expo generates,
     // and the Worker then cannot parse the body at all.
-    expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined();
+    expect(
+      (init.headers as Record<string, string>)['Content-Type'],
+    ).toBeUndefined();
   });
 
   it('never invents a transcript when the backend returns none', async () => {
@@ -248,7 +305,9 @@ describe('supportErrorMessage', () => {
     for (const kind of kinds) {
       const message = supportErrorMessage(kind);
       expect(message.length).toBeGreaterThan(0);
-      expect(message).not.toMatch(/groq|worker|cloudflare|firebase|http|stack/i);
+      expect(message).not.toMatch(
+        /groq|worker|cloudflare|firebase|http|stack/i,
+      );
     }
   });
 });
@@ -258,5 +317,43 @@ describe('support context', () => {
     // With no verified context, the assistant must not be handed order data it
     // could then state as fact.
     await expect(loadSupportContext()).resolves.toBeNull();
+  });
+});
+
+describe('voice request lifecycle', () => {
+  it('aborts an upload that exceeds its deadline', async () => {
+    global.fetch = jest.fn(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new Error('aborted')),
+          );
+        }),
+    ) as typeof fetch;
+    const pending = transcribeVoice('file:///tmp/note.m4a', 'audio/m4a');
+    const rejected = expect(pending).rejects.toMatchObject({ kind: 'timeout' });
+    await jest.advanceTimersByTimeAsync(45_000);
+    await rejected;
+  });
+  it('aborts upload when the caller stops it', async () => {
+    global.fetch = jest.fn(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new Error('aborted')),
+          );
+        }),
+    ) as typeof fetch;
+    const controller = new AbortController();
+    const pending = transcribeVoice(
+      'file:///tmp/note.m4a',
+      'audio/m4a',
+      controller.signal,
+    );
+    const rejected = expect(pending).rejects.toMatchObject({ kind: 'aborted' });
+    await jest.advanceTimersByTimeAsync(0);
+    controller.abort();
+    await rejected;
+    expect(jest.getTimerCount()).toBe(0);
   });
 });

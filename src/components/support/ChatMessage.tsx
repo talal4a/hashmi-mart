@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
-  FadeIn,
+  FadeInUp,
   LinearTransition,
   useReducedMotion,
 } from 'react-native-reanimated';
@@ -41,9 +41,19 @@ type Props = {
   user: UserIdentity;
   /** First name only, so a two-word name does not wrap the header row. */
   displayName: string;
+  onRetryVoice?: (id: string) => void;
+  onDeleteVoice?: (id: string) => void;
+  busy?: boolean;
 };
 
-function ChatMessage({ message, user, displayName }: Props) {
+function ChatMessage({
+  message,
+  user,
+  displayName,
+  onRetryVoice,
+  onDeleteVoice,
+  busy,
+}: Props) {
   const reduced = useReducedMotion();
   const isUser = message.role === 'user';
 
@@ -51,7 +61,9 @@ function ChatMessage({ message, user, displayName }: Props) {
   // lifting out of the composer — belongs to the composer, not here; this is
   // what a message looks like when it simply arrives (an AI turn, or a replayed
   // history entry).
-  const entering = reduced ? undefined : FadeIn.duration(220);
+  const entering = reduced
+    ? undefined
+    : FadeInUp.duration(240).springify().damping(24);
 
   return (
     <Animated.View
@@ -71,7 +83,12 @@ function ChatMessage({ message, user, displayName }: Props) {
         </Text>
 
         {message.audioUri ? (
-          <VoiceMessage message={message} />
+          <VoiceMessage
+            message={message}
+            onRetry={onRetryVoice}
+            onDelete={onDeleteVoice}
+            busy={busy}
+          />
         ) : (
           <View
             style={[

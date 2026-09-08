@@ -65,30 +65,32 @@ export default function ErrorRetry({
   return (
     <Animated.View
       entering={reduced ? undefined : FadeIn.duration(200)}
-      style={[s.card, style]}
+      collapsable={false}
     >
-      <View style={s.head}>
-        <TriangleAlert size={15} color={support.error} strokeWidth={2.2} />
-        <Text style={s.message}>{message}</Text>
-      </View>
-      <View style={s.actions}>
-        <PressableScale
-          accessibilityRole="button"
-          accessibilityLabel="Try again"
-          onPress={onRetry}
-          disabled={retrying}
-          scaleTo={0.95}
-          style={s.retry}
-        >
-          <RotateCcw size={14} color={support.ink} strokeWidth={2.2} />
-          <Text style={s.retryText}>Try again</Text>
-        </PressableScale>
-        {offerWhatsApp ? (
-          <View style={s.whatsapp}>
-            <WhatsAppContinueButton />
-          </View>
-        ) : null}
-      </View>
+      <Animated.View style={[s.card, style]}>
+        <View style={s.head}>
+          <TriangleAlert size={15} color={support.error} strokeWidth={2.2} />
+          <Text style={s.message}>{message}</Text>
+        </View>
+        <View style={s.actions}>
+          <PressableScale
+            accessibilityRole="button"
+            accessibilityLabel="Try again"
+            onPress={onRetry}
+            disabled={retrying}
+            scaleTo={0.95}
+            style={s.retry}
+          >
+            <RotateCcw size={14} color={support.ink} strokeWidth={2.2} />
+            <Text style={s.retryText}>Try again</Text>
+          </PressableScale>
+          {offerWhatsApp ? (
+            <View style={s.whatsapp}>
+              <WhatsAppContinueButton />
+            </View>
+          ) : null}
+        </View>
+      </Animated.View>
     </Animated.View>
   );
 }

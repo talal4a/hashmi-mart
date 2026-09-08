@@ -9,12 +9,7 @@ export type ChatRole = 'user' | 'assistant';
  * worth retrying as-is.
  */
 export type MessageStatus =
-  | 'sending'
-  | 'sent'
-  | 'transcribing'
-  | 'streaming'
-  | 'complete'
-  | 'error';
+  'sending' | 'sent' | 'transcribing' | 'streaming' | 'complete' | 'error';
 
 export type SupportMessage = {
   id: string;
@@ -28,6 +23,7 @@ export type SupportMessage = {
   durationMs?: number;
   /** What the backend heard. Shown under the waveform once it arrives. */
   transcript?: string;
+  voiceError?: string;
   /** The assistant asked for a human. Renders the WhatsApp handoff card. */
   handoff?: boolean;
 };

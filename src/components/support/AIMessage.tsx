@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { memo, useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
@@ -36,10 +36,10 @@ type Props = {
   phase: AIPhase;
 };
 
-export default function AIMessage({ content, phase }: Props) {
+function AIMessage({ content, phase }: Props) {
   const reduced = useReducedMotion();
-  const collapse = useSharedValue(0);
-  const open = useSharedValue(0);
+  const collapse = useSharedValue(phase === 'complete' ? 1 : 0);
+  const open = useSharedValue(phase === 'complete' ? 1 : 0);
 
   const answering = content.length > 0;
 
@@ -71,7 +71,7 @@ export default function AIMessage({ content, phase }: Props) {
     transform: [
       // Expanding from the dots' compressed state rather than from nothing:
       // 0.9 is roughly where three gathered dots sit inside this container.
-      { scale: answering ? 0.9 + open.value * 0.1 : 1 },
+      { scale: answering && !reduced ? 0.9 + open.value * 0.1 : 1 },
     ],
   }));
 
@@ -84,7 +84,9 @@ export default function AIMessage({ content, phase }: Props) {
       <View style={s.avatar}>
         <HashmiAvatar
           size={30}
-          state={answering ? 'speaking' : 'thinking'}
+          state={
+            phase === 'complete' ? 'idle' : answering ? 'speaking' : 'thinking'
+          }
         />
       </View>
       <View style={s.column}>
@@ -100,8 +102,16 @@ export default function AIMessage({ content, phase }: Props) {
               ) : null}
             </Text>
           ) : (
-            <AIThinkingIndicator collapse={collapse} />
+            <View style={{ height: 18, width: 35 }} />
           )}
+          {phase !== 'complete' ? (
+            <View
+              pointerEvents="none"
+              style={{ position: 'absolute', left: 14, top: 11 }}
+            >
+              <AIThinkingIndicator collapse={collapse} active={!answering} />
+            </View>
+          ) : null}
         </Animated.View>
       </View>
     </Animated.View>
@@ -132,3 +142,5 @@ const s = StyleSheet.create({
   },
   caret: { color: support.accent, fontSize: 13 },
 });
+
+export default memo(AIMessage);
