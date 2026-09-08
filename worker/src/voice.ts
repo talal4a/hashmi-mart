@@ -25,11 +25,17 @@ import { GroqError, transcribe, completeChat, type ChatTurn } from './groq';
  */
 const GROCERY_PROMPT = [
   'HashmiMart grocery order in Urdu, Roman Urdu, Punjabi or English.',
-  'Quantities: aik, ek, do, teen, chaar, paanch, chay, saat, aath, nau, das,',
-  'aadha kilo, paao, dozen, darjan, packet, bottle, dabba, thaila.',
+  // Urdu script first: this is what a genuinely Urdu order comes back as, and
+  // biasing towards the right spellings of these words is most of the accuracy
+  // on the language that was failing.
+  'ایک دو تین چار پانچ چھ سات آٹھ نو دس درجن آدھا کلو پاؤ پیکٹ بوتل ڈبہ تھیلا۔',
+  'ٹماٹر کیلا پالک سیب کھیرا آلو پیاز دودھ دہی انڈے آٹا چاول چینی چائے پتی نمک',
+  'تیل گھی دال چنا ادرک لہسن مرغی گوشت مچھلی روٹی بریڈ سنترہ مالٹا۔',
+  'Quantities: aik, ek, ik, do, teen, trai, chaar, paanch, panj, chay, saat,',
+  'aath, nau, das, aadha kilo, paao, dozen, darjan, packet, bottle, dabba, thaila.',
   'Items: doodh, dahi, anday, aata, chawal, cheeni, chai, patti, namak, tel,',
   'ghee, dal, chana, aloo, pyaz, tamatar, adrak, lehsan, kela, seb, santra,',
-  'gosht, murghi, machli, bread, biscuit, saabun, surf, shampoo, tissue.',
+  'malta, palak, saag, kheera, kakri, gosht, murghi, machli, bread, biscuit.',
 ].join(' ');
 
 /**
@@ -53,8 +59,13 @@ Return ONLY a JSON object, no prose, no code fence:
 {"items":[{"query":"...","quantity":1,"unit":"kg"|"g"|"litre"|"ml"|"unit"|"packet","confidence":0.0-1.0}],"language":"ur"|"pa"|"en"|"mixed"}
 
 Rules:
-- "query" is the item as the speaker meant it, in plain English where obvious
-  (doodh -> milk, anday -> eggs, aloo -> potato), otherwise the original words.
+- "query" is the item as the speaker meant it. Give plain English where the word
+  is a common grocery item (ٹماٹر/tamatar -> tomato, کیلا/kela -> banana,
+  پالک/palak -> spinach, کھیرا/kheera -> cucumber, سیب/seb -> apple,
+  دودھ/doodh -> milk, انڈے/anday -> eggs, آلو/aloo -> potato). This holds for
+  Urdu script exactly as it does for Roman: translate the word, do not transcribe
+  it back. If you do not recognise the word, return it exactly as spoken —
+  including in Urdu script — rather than guessing at an English one.
 - NEVER invent an item that was not spoken. If a word is unclear, still return
   it with the words you heard and a confidence below 0.5.
 - Omit quantity rather than guessing it. An absent quantity is recoverable; a

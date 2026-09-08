@@ -135,3 +135,85 @@ describe('order confidence', () => {
     expect(orderConfidence([])).toBe('low');
   });
 });
+
+/**
+ * Urdu and Punjabi, which is where this actually failed in the field.
+ *
+ * Whisper returns Urdu speech in Urdu script — "ٹماٹر", not "tamatar" — and
+ * every alias was Latin, so a genuinely Urdu order matched nothing while
+ * English worked perfectly. That asymmetry is exactly what the store reported,
+ * and it is invisible in any test written in Roman.
+ */
+describe('Urdu script', () => {
+  it.each([
+    ['ٹماٹر', 'tomato'],
+    ['کیلا', 'banana'],
+    ['پالک', 'spinach'],
+    ['سیب', 'apple'],
+    ['کھیرا', 'cucumber'],
+  ])('matches %s to the catalogue', (spoken, id) => {
+    expect(matchCatalog(spoken).productId).toBe(id);
+  });
+
+  it('reads a quantity written in Urdu words', () => {
+    const match = matchCatalog('دو کلو ٹماٹر');
+    expect(match.productId).toBe('tomato');
+    expect(match.quantity).toBe(2);
+  });
+
+  it('reads Urdu-Indic digits', () => {
+    // "۲ کلو" is two kilos. Untranslated it is not a number to JavaScript, and
+    // the quantity is silently lost.
+    expect(readQuantity('۲ کلو ٹماٹر')?.quantity).toBe(2);
+    expect(readQuantity('۵ کیلے')?.quantity).toBe(5);
+  });
+
+  it('reads the Urdu fractional words', () => {
+    expect(readQuantity('آدھا کلو پالک')).toEqual({ quantity: 0.5, unit: 'kg' });
+    expect(readQuantity('پاؤ ادرک')).toEqual({ quantity: 0.25, unit: 'kg' });
+  });
+
+  it('is unbothered by diacritics and letter variants', () => {
+    // Optional harakat, and ی vs ي — the same word to a reader, different
+    // strings to a comparison.
+    expect(matchCatalog('ٹَماٹر').productId).toBe('tomato');
+    expect(matchCatalog('كھیرا').productId).toBe('cucumber');
+  });
+
+  it('handles a whole Urdu order', () => {
+    const matches = matchOrder([
+      { query: 'دو کلو ٹماٹر' },
+      { query: 'تین کیلے' },
+      { query: 'آدھا کلو پالک' },
+    ]);
+    expect(matches.map(m => m.productId)).toEqual(['tomato', 'banana', 'spinach']);
+    expect(matches.map(m => m.quantity)).toEqual([2, 3, 0.5]);
+    expect(orderConfidence(matches)).toBe('high');
+  });
+});
+
+describe('Punjabi', () => {
+  it('reads Punjabi number words', () => {
+    // panj, not paanch.
+    expect(readQuantity('panj kele')?.quantity).toBe(5);
+    expect(readQuantity('trai tamatar')?.quantity).toBe(3);
+    expect(readQuantity('ikk seb')?.quantity).toBe(1);
+  });
+
+  it('matches the Punjabi word for cucumber', () => {
+    expect(matchCatalog('kakri').productId).toBe('cucumber');
+  });
+});
+
+describe('the products that had no aliases at all', () => {
+  it.each([
+    ['palak', 'spinach'],
+    ['saag', 'spinach'],
+    ['kheera', 'cucumber'],
+    ['khira', 'cucumber'],
+  ])('matches %s', (spoken, id) => {
+    // Two of five stocked products had no Urdu aliases whatsoever, while
+    // aliases existed for milk and eggs, which are not stocked.
+    expect(matchCatalog(spoken).productId).toBe(id);
+  });
+});

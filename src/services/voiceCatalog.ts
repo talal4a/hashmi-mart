@@ -33,26 +33,54 @@ export type CatalogEntry = {
  * dull and it is right.
  */
 const ALIASES: Record<string, readonly string[]> = {
-  tomato: ['tamatar', 'tamater', 'tomato', 'tomatoes', 'tmatar'],
-  banana: ['kela', 'kaila', 'banana', 'bananas'],
-  potato: ['aloo', 'alu', 'potato', 'potatoes'],
-  onion: ['pyaz', 'piyaz', 'pyaaz', 'onion', 'onions'],
-  milk: ['doodh', 'dudh', 'dodh', 'milk'],
-  eggs: ['anday', 'ande', 'aanday', 'egg', 'eggs'],
-  bread: ['bread', 'double roti', 'dabal roti'],
-  rice: ['chawal', 'chaval', 'rice'],
-  flour: ['aata', 'atta', 'flour'],
-  sugar: ['cheeni', 'chini', 'sugar'],
-  tea: ['chai', 'chaye', 'patti', 'tea'],
-  oil: ['tel', 'oil', 'cooking oil'],
-  yoghurt: ['dahi', 'yoghurt', 'yogurt', 'curd'],
-  apple: ['seb', 'saib', 'apple', 'apples'],
-  orange: ['santra', 'santara', 'orange', 'oranges'],
-  chicken: ['murghi', 'murgi', 'chicken'],
-  lentils: ['dal', 'daal', 'lentil', 'lentils'],
-  salt: ['namak', 'salt'],
-  garlic: ['lehsan', 'lasan', 'garlic'],
-  ginger: ['adrak', 'ginger'],
+  // Stocked today. Urdu script first, because that is what Whisper actually
+  // returns for Urdu speech.
+  tomato: [
+    'ٹماٹر', 'تماتر',
+    'tamatar', 'tamater', 'tamatr', 'tamaatar', 'timatar',
+    'tomato', 'tomatoes',
+  ],
+  banana: [
+    'کیلا', 'کیلے', 'کیلہ',
+    'kela', 'kele', 'kaila', 'kaile', 'keela',
+    'banana', 'bananas',
+  ],
+  spinach: [
+    'پالک', 'ساگ',
+    'palak', 'paalak', 'saag', 'sag',
+    'spinach', 'greens',
+  ],
+  apple: [
+    'سیب', 'سیو',
+    'seb', 'saib', 'sev', 'seo',
+    'apple', 'apples',
+  ],
+  cucumber: [
+    'کھیرا', 'کھیرے', 'ککڑی',
+    'kheera', 'khira', 'kheere', 'khera', 'kakri', 'kakdi',
+    'cucumber', 'cucumbers',
+  ],
+
+  // Not stocked yet. Carried so that adding one to freshPicks is a one-line
+  // change rather than a translation exercise — CATALOG only ever exposes what
+  // is actually on the shelf.
+  potato: ['آلو', 'aloo', 'alu', 'aalu', 'potato', 'potatoes'],
+  onion: ['پیاز', 'pyaz', 'piyaz', 'pyaaz', 'pyaj', 'onion', 'onions'],
+  milk: ['دودھ', 'doodh', 'dudh', 'dodh', 'dood', 'milk'],
+  eggs: ['انڈے', 'انڈا', 'انڈوں', 'anday', 'ande', 'aanday', 'anda', 'egg', 'eggs'],
+  bread: ['روٹی', 'ڈبل روٹی', 'بریڈ', 'bread', 'double roti', 'dabal roti', 'roti'],
+  rice: ['چاول', 'chawal', 'chaval', 'chawel', 'rice'],
+  flour: ['آٹا', 'aata', 'atta', 'ata', 'flour'],
+  sugar: ['چینی', 'cheeni', 'chini', 'chinni', 'sugar'],
+  tea: ['چائے', 'پتی', 'chai', 'chaye', 'chae', 'patti', 'tea'],
+  oil: ['تیل', 'گھی', 'tel', 'ghee', 'gheo', 'oil', 'cooking oil'],
+  yoghurt: ['دہی', 'dahi', 'dahee', 'yoghurt', 'yogurt', 'curd'],
+  orange: ['سنترہ', 'مالٹا', 'santra', 'santara', 'malta', 'orange', 'oranges'],
+  chicken: ['مرغی', 'گوشت', 'murghi', 'murgi', 'murghee', 'gosht', 'chicken'],
+  lentils: ['دال', 'چنا', 'dal', 'daal', 'chana', 'lentil', 'lentils'],
+  salt: ['نمک', 'namak', 'salt'],
+  garlic: ['لہسن', 'lehsan', 'lasan', 'lehsun', 'garlic'],
+  ginger: ['ادرک', 'adrak', 'adrakh', 'ginger'],
 };
 
 /**
@@ -69,7 +97,14 @@ export const CATALOG: readonly CatalogEntry[] = freshPicks.map(item => {
   for (const word of words) {
     for (const alias of ALIASES[word] ?? []) aliases.add(alias);
   }
-  return { id: item.id, name: item.name, aliases: [...aliases] };
+  // Folded on the way in, so the comparison at match time is fold-to-fold. A
+  // fold applied to only one side is worse than no fold at all: it moves which
+  // spellings fail rather than fixing any of them.
+  return {
+    id: item.id,
+    name: item.name,
+    aliases: [...aliases].map(normalise),
+  };
 });
 
 /** How sure we are, and therefore how the sheet should treat it. */
@@ -94,27 +129,62 @@ export type CatalogMatch = {
  * the customer nudges once.
  */
 const NUMBERS: Record<string, number> = {
-  aik: 1, ek: 1, ik: 1, one: 1,
-  do: 2, doo: 2, two: 2,
-  teen: 3, tin: 3, three: 3,
-  chaar: 4, char: 4, four: 4,
-  paanch: 5, panch: 5, five: 5,
-  chay: 6, che: 6, chhe: 6, six: 6,
-  saat: 7, seven: 7,
-  aath: 8, ath: 8, eight: 8,
-  nau: 9, no: 9, nine: 9,
-  das: 10, ten: 10,
+  // Roman, in the spellings people actually type and Whisper actually returns.
+  aik: 1, ek: 1, ik: 1, ikk: 1, one: 1,
+  do: 2, doo: 2, dou: 2, two: 2,
+  teen: 3, tin: 3, tean: 3, trai: 3, three: 3,
+  chaar: 4, char: 4, chaar4: 4, four: 4,
+  paanch: 5, panch: 5, panj: 5, panjh: 5, five: 5,
+  chay: 6, che: 6, chhe: 6, chey: 6, six: 6,
+  saat: 7, sat: 7, satt: 7, seven: 7,
+  aath: 8, ath: 8, atth: 8, eight: 8,
+  nau: 9, no: 9, nau9: 9, nine: 9,
+  das: 10, dus: 10, ten: 10,
   darjan: 12, dozen: 12,
+
+  // Urdu and Shahmukhi Punjabi. Whisper returns Urdu speech in Urdu script, so
+  // without these a spoken "دو کلو" carries no quantity at all and the order
+  // silently becomes one of everything.
+  'ایک': 1,
+  'دو': 2,
+  'تین': 3,
+  'چار': 4,
+  'پانچ': 5, 'پنج': 5,
+  'چھ': 6, 'چھے': 6,
+  'سات': 7,
+  'آٹھ': 8,
+  'نو': 9,
+  'دس': 10,
+  'درجن': 12,
 };
 
 /** Words that carry a quantity of their own. */
 const FRACTIONS: Record<string, { quantity: number; unit: string }> = {
   paao: { quantity: 0.25, unit: 'kg' },
   pao: { quantity: 0.25, unit: 'kg' },
+  'پاؤ': { quantity: 0.25, unit: 'kg' },
+  'پاو': { quantity: 0.25, unit: 'kg' },
   aadha: { quantity: 0.5, unit: 'kg' },
   adha: { quantity: 0.5, unit: 'kg' },
+  adh: { quantity: 0.5, unit: 'kg' },
   half: { quantity: 0.5, unit: 'kg' },
+  'آدھا': { quantity: 0.5, unit: 'kg' },
+  'آدھ': { quantity: 0.5, unit: 'kg' },
 };
+
+/**
+ * The number tables, folded the same way the input is.
+ *
+ * Built once at load rather than folded per lookup: "آدھا" normalises to
+ * "ادھا", so an unfolded key never matches its own word — the table looks
+ * right and silently answers nothing.
+ */
+const FOLDED_NUMBERS = new Map<string, number>(
+  Object.entries(NUMBERS).map(([word, value]) => [normalise(word), value]),
+);
+const FOLDED_FRACTIONS = new Map<string, { quantity: number; unit: string }>(
+  Object.entries(FRACTIONS).map(([word, value]) => [normalise(word), value]),
+);
 
 /** Reads a spoken quantity out of a phrase, or nothing if none was said. */
 export function readQuantity(
@@ -122,9 +192,9 @@ export function readQuantity(
 ): { quantity: number; unit?: string } | null {
   const words = normalise(phrase).split(' ');
   for (const word of words) {
-    const fraction = FRACTIONS[word];
+    const fraction = FOLDED_FRACTIONS.get(word);
     if (fraction) return fraction;
-    const spoken = NUMBERS[word];
+    const spoken = FOLDED_NUMBERS.get(word);
     if (spoken !== undefined) return { quantity: spoken };
     const digits = Number(word);
     if (Number.isFinite(digits) && digits > 0 && digits <= 99) {
@@ -134,9 +204,52 @@ export function readQuantity(
   return null;
 }
 
+/**
+ * Urdu written two ways is still one word.
+ *
+ * Arabic script offers several encodings of the same letter and Whisper does
+ * not pick consistently between them: ي and ی are both "yeh", ك and ک both
+ * "kaf", ه and ہ both "heh". Two strings that a reader would call identical
+ * compare as different, so an alias list matches nothing while looking
+ * completely correct — which is the worst kind of bug to stare at.
+ *
+ * Diacritics go the same way. They are optional in written Urdu, so the same
+ * word arrives with and without them depending on nothing in particular.
+ */
+function foldArabicScript(value: string): string {
+  return (
+    value
+      // Harakat, hamza marks and superscript alef: optional, and inconsistently
+      // present.
+      .replace(/[\u064B-\u0655\u0670]/g, '')
+      // Zero-width joiners and tatweel: invisible, and they break equality.
+      .replace(/[\u200B-\u200F\u0640]/g, '')
+      .replace(/[\u064A\u0649]/g, '\u06CC')
+      .replace(/\u0643/g, '\u06A9')
+      .replace(/[\u0647\u06C3\u0629]/g, '\u06C1')
+      .replace(/[\u0623\u0625\u0622\u0671]/g, '\u0627')
+      .replace(/\u0624/g, '\u0648')
+      .replace(/\u0626/g, '\u06CC')
+  );
+}
+
+/**
+ * Urdu and Arabic-Indic digits, folded to the ones `Number()` understands.
+ *
+ * "۲ کلو" is two kilos. Left alone it is not a number to JavaScript at all, and
+ * the quantity is silently lost.
+ */
+function foldDigits(value: string): string {
+  return value.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, digit => {
+    const code = digit.codePointAt(0)!;
+    const base = code >= 0x06f0 ? 0x06f0 : 0x0660;
+    return String(code - base);
+  });
+}
+
 /** Lowercase, unpunctuated, single-spaced. Everything compares in this form. */
 function normalise(value: string): string {
-  return value
+  return foldDigits(foldArabicScript(value))
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s.]/gu, ' ')
     .replace(/\s+/g, ' ')
@@ -144,15 +257,18 @@ function normalise(value: string): string {
 }
 
 /**
- * Levenshtein, capped.
+ * Levenshtein, with an allowance that scales with length.
  *
- * Bounded at two edits and short-circuited on length, because the useful cases
- * are a dropped vowel or a doubled consonant. Anything further apart than that
- * is a different word, and letting the distance grow is how "namak" starts
- * matching "banana".
+ * A flat two edits is too generous for short words, and grocery words are
+ * short. "namak" and "palak" are two edits apart, so salt matched spinach —
+ * a customer asking for one receives the other, which is precisely the
+ * substitution this whole layer exists to prevent. Five letters or fewer get
+ * one edit; longer words get two, where the useful cases are a dropped vowel
+ * or a doubled consonant.
  */
-function withinTwoEdits(a: string, b: string): boolean {
-  if (Math.abs(a.length - b.length) > 2) return false;
+function isNearMiss(a: string, b: string): boolean {
+  const allowance = Math.min(a.length, b.length) <= 5 ? 1 : 2;
+  if (Math.abs(a.length - b.length) > allowance) return false;
   if (a === b) return true;
 
   let previous = Array.from({ length: b.length + 1 }, (_, i) => i);
@@ -169,10 +285,10 @@ function withinTwoEdits(a: string, b: string): boolean {
       best = Math.min(best, current[j]);
     }
     // Every path through this row is already too expensive.
-    if (best > 2) return false;
+    if (best > allowance) return false;
     previous = current;
   }
-  return previous[b.length] <= 2;
+  return previous[b.length] <= allowance;
 }
 
 /**
@@ -221,7 +337,7 @@ export function matchCatalog(
   for (const entry of CATALOG) {
     const near = entry.aliases.some(
       alias =>
-        alias.length >= 4 && words.some(word => word.length >= 4 && withinTwoEdits(word, alias)),
+        alias.length >= 4 && words.some(word => word.length >= 4 && isNearMiss(word, alias)),
     );
     if (near) {
       return { ...base, productId: entry.id, productName: entry.name, confidence: 'medium' };
