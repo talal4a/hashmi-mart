@@ -28,14 +28,14 @@ import { grocery } from './groceryTheme';
 
 export const TAB_BAR_HEIGHT = 72;
 export const TAB_BAR_GAP = 12;
-const INSET = 6;
-const SPRING = {
-  damping: 26,
-  stiffness: 380,
-  mass: 0.65,
-  overshootClamping: true,
-  reduceMotion: ReduceMotion.System,
-} as const;
+
+const CART_SPACE = 82;
+const TAB_BAR_RISE = 24;
+
+/* -------------------------------------------------------------------------- */
+/*                                    TABS                                    */
+/* -------------------------------------------------------------------------- */
+
 const TABS = [
   {
     key: 'home',
@@ -77,55 +77,135 @@ type Props = {
   badges?: Partial<Record<HomeTab, number>>;
 };
 
-// The notch is transparent, not a canvas-colored disc covering the glass.
-// Blur is confined to the wings and lower bridge so it never fills the cutout.
+/* -------------------------------------------------------------------------- */
+/*                              GLASS BACKGROUND                              */
+/* -------------------------------------------------------------------------- */
+
+type GlassBackdropProps = {
+  width: number;
+  blurTarget: RefObject<View | null>;
+};
+
 const GlassBackdrop = memo(function GlassBackdrop({
   width,
   blurTarget,
 }: GlassBackdropProps) {
   const middle = width / 2;
-  const contour = `M32 1 H${middle - 48} C${middle - 35} 1 ${middle - 38} 34 ${middle} 34 C${middle + 38} 34 ${middle + 35} 1 ${middle + 48} 1 H${width - 32} Q${width - 1} 1 ${width - 1} 32 V40 Q${width - 1} 71 ${width - 32} 71 H32 Q1 71 1 40 V32 Q1 1 32 1 Z`;
-  const blur = {
+
+  /*
+   * The top edge dips downward in the middle.
+   *
+   * This creates a REAL transparent notch instead of putting
+   * another circle on top of the navbar.
+   */
+  const contour = `
+    M 32 1
+
+    H ${middle - 48}
+
+    C
+      ${middle - 35} 1
+      ${middle - 38} 34
+      ${middle} 34
+
+    C
+      ${middle + 38} 34
+      ${middle + 35} 1
+      ${middle + 48} 1
+
+    H ${width - 32}
+
+    Q
+      ${width - 1} 1
+      ${width - 1} 32
+
+    V 40
+
+    Q
+      ${width - 1} 71
+      ${width - 32} 71
+
+    H 32
+
+    Q
+      1 71
+      1 40
+
+    V 32
+
+    Q
+      1 1
+      32 1
+
+    Z
+  `;
+
+  const blurProps = {
     blurTarget,
+
     blurMethod: 'dimezisBlurViewSdk31Plus' as const,
+
     blurReductionFactor: 4,
+
     tint:
       Platform.OS === 'ios'
         ? ('systemUltraThinMaterialLight' as const)
         : ('light' as const),
+
     intensity: 45,
   };
+
   return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFill, s.backdrop]}>
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {/* -------------------------------------------------------------- */}
+      {/* LEFT BLUR                                                      */}
+      {/* -------------------------------------------------------------- */}
+
       <BlurView
-        {...blur}
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: Math.max(0, middle - 48),
-        }}
+        {...blurProps}
+        style={[
+          styles.blurPiece,
+          {
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: Math.max(0, middle - 48),
+          },
+        ]}
       />
+
+      {/* -------------------------------------------------------------- */}
+      {/* RIGHT BLUR                                                     */}
+      {/* -------------------------------------------------------------- */}
+
       <BlurView
-        {...blur}
-        style={{
-          position: 'absolute',
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: Math.max(0, middle - 48),
-        }}
+        {...blurProps}
+        style={[
+          styles.blurPiece,
+          {
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: Math.max(0, middle - 48),
+          },
+        ]}
       />
+
+      {/* -------------------------------------------------------------- */}
+      {/* LOWER BRIDGE UNDER THE CART                                    */}
+      {/* -------------------------------------------------------------- */}
+
       <BlurView
-        {...blur}
-        style={{
-          position: 'absolute',
-          left: middle - 48,
-          top: 34,
-          bottom: 0,
-          width: 96,
-        }}
+        {...blurProps}
+        style={[
+          styles.blurPiece,
+          {
+            left: middle - 48,
+            top: 34,
+            bottom: 0,
+            width: 96,
+          },
+        ]}
       />
 
       {/* -------------------------------------------------------------- */}
@@ -173,6 +253,11 @@ export default function HomeBottomNav({
   const [width, setWidth] = useState(0);
 
   const [active, setActive] = useState<HomeTab>('home');
+
+  /* ---------------------------------------------------------------------- */
+  /*                                 TAB                                    */
+  /* ---------------------------------------------------------------------- */
+
   const renderTab = (tab: (typeof TABS)[number]) => {
     const selected = active === tab.key;
 
@@ -206,76 +291,53 @@ export default function HomeBottomNav({
           onChange?.(tab.key);
         }}
       >
-        <Animated.View style={iconStyle}>
-          <Icon size={23} color={color} strokeWidth={selected ? 2.2 : 1.8} />
-          {badge != null && badge > 0 && (
-            <View style={s.badge}>
-              <Text style={s.badgeText}>{badge > 99 ? '99+' : badge}</Text>
+        {/* Icon */}
+
+        <View style={styles.iconContainer}>
+          <Icon
+            size={23}
+            color={iconColor}
+            strokeWidth={selected ? 2.2 : 1.8}
+          />
+
+          {/* Tab badge */}
+
+          {badge > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
             </View>
           )}
-        </Animated.View>
+        </View>
+
+        {/* Label */}
+
         <Text
           numberOfLines={1}
+
           adjustsFontSizeToFit
-          minimumFontScale={0.85}
-          style={[s.label, { color, fontWeight: selected ? '600' : '400' }]}
+
+          minimumFontScale={0.82}
+
+          style={[
+            styles.label,
+
+            {
+              color: iconColor,
+
+              fontWeight: selected ? '600' : '400',
+            },
+          ]}
         >
           {tab.label}
         </Text>
-      </Pressable>
-    </GestureDetector>
-  );
-});
+      </PressableScale>
+    );
+  };
 
-/** Keep native blur and its target untouched when React updates tab labels. */
-const GlassBackdrop = memo(function GlassBackdrop({
-  blurTarget,
-}: Pick<Props, 'blurTarget'>) {
-  return (
-    <>
-      <BlurView
-        pointerEvents="none"
-        blurTarget={blurTarget}
-        blurMethod="dimezisBlurViewSdk31Plus"
-        blurReductionFactor={4}
-        tint={Platform.OS === 'ios' ? 'systemUltraThinMaterialLight' : 'light'}
-        intensity={45}
-        style={StyleSheet.absoluteFill}
-      />
-      <LinearGradient
-        pointerEvents="none"
-        colors={['#FFFFFF50', '#E4F5FF26', '#FFFFFF38']}
-        style={StyleSheet.absoluteFill}
-      />
-    </>
-  );
-});
+  /* ---------------------------------------------------------------------- */
+  /*                                RENDER                                  */
+  /* ---------------------------------------------------------------------- */
 
-/** One persistent selector; only its transform moves between equally sized tabs. */
-export default function HomeBottomNav({ onChange, blurTarget, badges }: Props) {
-  const insets = useSafeAreaInsets();
-  const [width, setWidth] = useState(0);
-  const tabWidth = Math.max(0, (width - INSET * 2) / TABS.length);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const target = useSharedValue(0);
-  const position = useSharedValue(0);
-  // Gesture worklets start motion immediately. This callback updates only tab
-  // semantics/icons; Pressable also provides the accessibility activation path.
-  const select = useCallback(
-    (index: number) => {
-      if (target.value !== index) {
-        target.value = index;
-        position.value = withSpring(index, SPRING);
-      }
-      setSelectedIndex(previous => (previous === index ? previous : index));
-      onChange?.(TABS[index].key);
-    },
-    [onChange, position, target],
-  );
-  useEffect(() => () => cancelAnimation(position), [position]);
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: position.value * tabWidth }],
-  }));
   return (
     <View
       pointerEvents="box-none"
@@ -373,23 +435,92 @@ export default function HomeBottomNav({ onChange, blurTarget, badges }: Props) {
     </View>
   );
 }
-const s = StyleSheet.create({
-  dock: { position: 'absolute', left: 18, right: 18, alignItems: 'center' },
-  shadow: {
-    width: '100%',
-    maxWidth: 600,
-    borderRadius: 34,
-    shadowColor: '#345B73',
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 3,
+
+/* -------------------------------------------------------------------------- */
+/*                                   STYLES                                   */
+/* -------------------------------------------------------------------------- */
+
+const styles = StyleSheet.create({
+  /* ---------------------------------------------------------------------- */
+  /* DOCK                                                                   */
+  /* ---------------------------------------------------------------------- */
+
+  dock: {
+    position: 'absolute',
+
+    left: 18,
+    right: 18,
+
+    alignItems: 'center',
+
+    zIndex: 100,
   },
-  pill: {
+
+  /* ---------------------------------------------------------------------- */
+  /* BAR                                                                    */
+  /* ---------------------------------------------------------------------- */
+
+  bar: {
+    width: '100%',
+
+    maxWidth: 600,
+
     height: TAB_BAR_HEIGHT,
+
+    position: 'relative',
+
     borderRadius: 34,
+
+    shadowColor: '#345B73',
+
+    shadowOpacity: 0.14,
+
+    shadowRadius: 18,
+
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+
+    elevation: 7,
+  },
+
+  glassLayer: {
+    ...StyleSheet.absoluteFillObject,
+
+    borderRadius: 34,
+
     overflow: 'hidden',
+  },
+
+  blurPiece: {
+    position: 'absolute',
+  },
+
+  /* ---------------------------------------------------------------------- */
+  /* TAB ROW                                                                */
+  /* ---------------------------------------------------------------------- */
+
+  tabs: {
+    position: 'absolute',
+
+    left: 6,
+    right: 6,
+    top: 5,
+    bottom: 5,
+
     flexDirection: 'row',
+
+    alignItems: 'center',
+  },
+
+  tab: {
+    flex: 1,
+
+    height: 58,
+
+    borderRadius: 24,
+
     alignItems: 'center',
 
     justifyContent: 'center',
@@ -476,6 +607,7 @@ const s = StyleSheet.create({
     flex: 1,
 
     borderRadius: 28,
+
     borderWidth: 1,
 
     borderColor: '#FFFFFFB3',
