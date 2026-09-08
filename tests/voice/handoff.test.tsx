@@ -52,7 +52,8 @@ jest.mock('../../src/components/voice/VoiceOrderSheet', () => {
           onPress: () =>
             onConfirm(mockItems, {
               transcript: 'دو کلو ٹماٹر اور پالک',
-              missed: ['anday'],
+              outOfStock: ['eggs'],
+              unclear: [],
               recording: { uri: 'file:///order.m4a', durationMs: 4200 },
             }),
         },
@@ -182,8 +183,9 @@ describe('confirming a voice order', () => {
       // against a small catalogue, so what was said settles what was meant.
       transcript: 'دو کلو ٹماٹر اور پالک',
       // And so does what we could not sell them, or the order just arrives
-      // short with nothing said about it.
-      missed: ['anday'],
+      // short with nothing said about it. An empty shelf and a word we could
+      // not place are told apart all the way to the screen that says so.
+      outOfStock: ['eggs'],
       // And the recording, so checkout can play back what was actually said
       // rather than only a machine's reading of it.
       recording: { uri: 'file:///order.m4a', durationMs: 4200 },

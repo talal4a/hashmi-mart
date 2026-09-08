@@ -83,6 +83,27 @@ const ALIASES: Record<string, readonly string[]> = {
   ginger: ['ادرک', 'adrak', 'adrakh', 'ginger'],
 };
 
+/** What to call a product we know the word for but do not sell. */
+const UNSTOCKED_LABELS: Record<string, string> = {
+  potato: 'potatoes',
+  onion: 'onions',
+  milk: 'milk',
+  eggs: 'eggs',
+  bread: 'bread',
+  rice: 'rice',
+  flour: 'flour',
+  sugar: 'sugar',
+  tea: 'tea',
+  oil: 'cooking oil',
+  yoghurt: 'yoghurt',
+  orange: 'oranges',
+  chicken: 'chicken',
+  lentils: 'lentils',
+  salt: 'salt',
+  garlic: 'garlic',
+  ginger: 'ginger',
+};
+
 /**
  * The catalogue, built from what the app actually stocks.
  *
@@ -107,6 +128,27 @@ export const CATALOG: readonly CatalogEntry[] = freshPicks.map(item => {
   };
 });
 
+/**
+ * Words we understand and cannot sell.
+ *
+ * Every alias key that no stocked product claims. The list was already here so
+ * that putting eggs on the shelf stays a one-line change; it turns out to be
+ * exactly what is needed to tell a customer *why* their eggs are not in the
+ * cart, instead of implying we did not hear them.
+ */
+const UNSTOCKED: readonly CatalogEntry[] = (() => {
+  const stocked = new Set(
+    freshPicks.flatMap(item => item.name.toLowerCase().split(/\s+/)),
+  );
+  return Object.entries(ALIASES)
+    .filter(([key]) => !stocked.has(key))
+    .map(([key, aliases]) => ({
+      id: key,
+      name: UNSTOCKED_LABELS[key] ?? key,
+      aliases: aliases.map(normalise),
+    }));
+})();
+
 /** How sure we are, and therefore how the sheet should treat it. */
 export type MatchConfidence = 'high' | 'medium' | 'low';
 
@@ -118,6 +160,15 @@ export type CatalogMatch = {
   quantity: number;
   unit?: string;
   confidence: MatchConfidence;
+  /**
+   * Set when we understood the word perfectly and simply do not sell it.
+   *
+   * "We don't stock eggs yet" and "we couldn't make that out" are different
+   * things to be told, and only one of them is worth saying the order again
+   * for. Without this they were the same unmatched item and got the same
+   * shrug, which reads as the app failing when in fact it understood.
+   */
+  unstocked?: string;
 };
 
 /**
@@ -344,7 +395,18 @@ export function matchCatalog(
     }
   }
 
-  // Heard, but not sold here. Returned rather than dropped so the sheet can
+  // Understood, and not on the shelf. Worth saying so by name: the customer
+  // asked for something real and the answer is about our stock, not their
+  // pronunciation.
+  for (const entry of UNSTOCKED) {
+    const hit =
+      entry.aliases.some(alias => alias === text) ||
+      entry.aliases.some(alias => words.includes(alias)) ||
+      entry.aliases.some(alias => alias.length >= 4 && text.includes(alias));
+    if (hit) return { ...base, confidence: 'low', unstocked: entry.name };
+  }
+
+  // Heard, but not understood. Returned rather than dropped so the sheet can
   // show it greyed out — a silently missing item is how an order arrives short.
   return { ...base, confidence: 'low' };
 }
@@ -433,6 +495,19 @@ export function scanTranscript(transcript: string): CatalogMatch[] {
     }
   }
 
+  // Things we understand and do not sell, so a sentence naming them can say
+  // so by name rather than leaving the customer to notice the gap.
+  for (let i = 0; i < words.length; i += 1) {
+    for (const entry of UNSTOCKED) {
+      if (found.has(entry.id)) continue;
+      if (entry.aliases.includes(words[i])) {
+        hits.push({ entry, at: i, said: words[i], confidence: 'low' });
+        found.add(entry.id);
+        break;
+      }
+    }
+  }
+
   for (let i = 0; i < words.length; i += 1) {
     const word = words[i];
     if (word.length < 4) continue;
@@ -454,16 +529,25 @@ export function scanTranscript(transcript: string): CatalogMatch[] {
   hits.sort((a, b) => a.at - b.at);
   const taken = new Set(hits.map(hit => hit.at));
 
+  const unstocked = new Set(UNSTOCKED.map(entry => entry.id));
+
   return hits.map(hit => {
     const read = quantityBefore(words, hit.at, taken);
-    return {
+    const base = {
       query: hit.said,
-      productId: hit.entry.id,
-      productName: hit.entry.name,
       quantity: read?.quantity ?? 1,
       unit: read?.unit,
       confidence: hit.confidence,
     };
+    // An unstocked hit is not a product: it carries a name to say out loud and
+    // deliberately no id, so nothing downstream can put it in a cart.
+    return unstocked.has(hit.entry.id)
+      ? { ...base, unstocked: hit.entry.name }
+      : {
+          ...base,
+          productId: hit.entry.id,
+          productName: hit.entry.name,
+        };
   });
 }
 
@@ -487,8 +571,15 @@ export function readOrder(
   const already = new Set(
     parsed.map(match => match.productId).filter(Boolean) as string[],
   );
-  const missed = scanTranscript(transcript).filter(
-    match => !already.has(match.productId!),
+  // Unstocked items dedupe by name, having no id to dedupe by — otherwise the
+  // customer is told twice that we have no eggs.
+  const named = new Set(
+    parsed.map(match => match.unstocked).filter(Boolean) as string[],
+  );
+  const missed = scanTranscript(transcript).filter(match =>
+    match.productId
+      ? !already.has(match.productId)
+      : !named.has(match.unstocked ?? ''),
   );
   return [...parsed, ...missed];
 }

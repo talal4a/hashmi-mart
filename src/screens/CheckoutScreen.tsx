@@ -64,6 +64,12 @@ const PLAYER_TONE: PlayerTone = {
 
 type CheckoutRoute = RouteProp<RootStackParamList, 'Checkout'>;
 
+/** "eggs", "eggs and rice", "eggs, rice and salt". */
+function phrase(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 export default function CheckoutScreen() {
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
@@ -79,7 +85,8 @@ export default function CheckoutScreen() {
 
   const source = route.params?.source ?? 'browse';
   const transcript = route.params?.transcript ?? null;
-  const missed = route.params?.missed ?? [];
+  const outOfStock = route.params?.outOfStock ?? [];
+  const unclear = route.params?.unclear ?? [];
   const recording = route.params?.recording ?? null;
 
   // Nothing else on this screen plays audio, so the note owns the decoder from
@@ -229,14 +236,25 @@ export default function CheckoutScreen() {
               </Animated.View>
             ) : null}
 
-            {missed.length ? (
+            {/* Two different pieces of news, said separately. An empty shelf
+                is ours to fix and nothing the customer can repeat their way
+                out of; a word we could not place is worth another try. */}
+            {outOfStock.length || unclear.length ? (
               <Animated.View entering={enter} style={s.missed}>
-                <Text style={s.missedLabel}>Not available</Text>
-                <Text style={s.missedText}>
-                  We could not find {missed.join(', ')} in stock, so{' '}
-                  {missed.length === 1 ? 'it is' : 'they are'} not in this
-                  order.
-                </Text>
+                <Text style={s.missedLabel}>Not in this order</Text>
+                {outOfStock.length ? (
+                  <Text style={s.missedText}>
+                    We don't sell {phrase(outOfStock)} yet, so{' '}
+                    {outOfStock.length === 1 ? 'it was' : 'they were'} left out.
+                  </Text>
+                ) : null}
+                {unclear.length ? (
+                  <Text style={s.missedText}>
+                    We couldn't make out “{unclear.join('”, “')}”. Add{' '}
+                    {unclear.length === 1 ? 'it' : 'them'} by hand, or say the
+                    order again from the home screen.
+                  </Text>
+                ) : null}
               </Animated.View>
             ) : null}
 

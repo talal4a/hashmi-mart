@@ -16,7 +16,7 @@ import Animated, {
   FadeOut,
   useReducedMotion,
 } from 'react-native-reanimated';
-import { Check, TriangleAlert, X } from 'lucide-react-native';
+import { Check, Mic, TriangleAlert, X } from 'lucide-react-native';
 import PressableScale from '../ui/PressableScale';
 import { grocery } from '../home/groceryTheme';
 import useVoiceRecorder, { formatDuration } from '../../hooks/useVoiceRecorder';
@@ -56,8 +56,16 @@ export type ConfirmedVoiceItem = {
 /** Everything about the order that is not an item. */
 export type ConfirmedVoiceOrder = {
   transcript: string | null;
-  /** Things that were asked for and are not on the shelf. */
-  missed: string[];
+  /**
+   * The two ways an item can fail to reach the cart, kept apart.
+   *
+   * They are not the same news. "We don't stock eggs" is about our shelf and
+   * repeating the order will not change it; "we couldn't make that out" is
+   * about the recording and saying it again is exactly the fix. Told as one
+   * message they both read as the app being broken.
+   */
+  outOfStock: string[];
+  unclear: string[];
   /** The recording, so checkout can play back what was actually said. */
   recording: { uri: string; durationMs: number } | null;
 };
@@ -119,6 +127,20 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
     onClose();
   }, [cancelHandover, recorder, order, onClose]);
 
+  /**
+   * Says it again.
+   *
+   * The one repair that actually helps when nothing was understood — and it
+   * was not offered at all: the only way back to the microphone was to close
+   * the sheet and start over, which looks like being told no.
+   */
+  const retake = useCallback(async () => {
+    cancelHandover();
+    order.reset();
+    const started = await recorder.start();
+    if (started) tapRecordStart();
+  }, [cancelHandover, order, recorder]);
+
   const finish = useCallback(async () => {
     const result = await recorder.stop();
     if (!result) return;
@@ -176,8 +198,16 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
     // Carried rather than dropped. The sheet is only up for a moment now, so
     // an item we cannot sell has to be said somewhere the customer will
     // actually read it — otherwise the order simply arrives short.
-    const missed = order.matches
-      .filter(match => !match.productId)
+    const unmatched = order.matches.filter(match => !match.productId);
+    const outOfStock = [
+      ...new Set(
+        unmatched
+          .map(match => match.unstocked)
+          .filter((name): name is string => Boolean(name)),
+      ),
+    ];
+    const unclear = unmatched
+      .filter(match => !match.unstocked)
       .map(match => match.query);
     const recording = order.recording
       ? { uri: order.recording.uri, durationMs: order.recording.durationMs }
@@ -186,7 +216,7 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
     // wrote is not touched. Checkout plays it back.
     void recorder.cancel();
     order.reset();
-    onConfirm(items, { transcript, missed, recording });
+    onConfirm(items, { transcript, outOfStock, unclear, recording });
   }, [order, recorder, onConfirm, cancelHandover]);
 
   /**
@@ -277,6 +307,7 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
           ) : (
             <Review
               order={order}
+              onRetake={retake}
               onSend={sendOriginal}
               onSetQuantity={order.setQuantity}
               onMeasureRow={measureRow}
@@ -384,11 +415,13 @@ function Sent({
 
 function Review({
   order,
+  onRetake,
   onSend,
   onSetQuantity,
   onMeasureRow,
 }: {
   order: ReturnType<typeof useVoiceOrder>;
+  onRetake: () => void;
   onSend: () => void;
   onSetQuantity: (index: number, quantity: number) => void;
   onMeasureRow: (productId: string, frame: LayoutRectangle) => void;
@@ -401,13 +434,9 @@ function Review({
           <Text style={s.heardLabel}>You said</Text>
           <Text style={s.heardText}>{order.transcript}</Text>
         </View>
-      ) : (
-        <Text style={s.lead}>
-          {order.error
-            ? order.error
-            : "That recording came through quiet — but you can still send it."}
-        </Text>
-      )}
+      ) : null}
+
+      {order.addable.length === 0 ? <Trouble order={order} /> : null}
 
       {order.matches.length > 0 ? (
         <ScrollView style={s.items} contentContainerStyle={s.itemsInner}>
@@ -448,19 +477,94 @@ function Review({
             </Text>
           </View>
         ) : (
-          <PressableScale
-            accessibilityRole="button"
-            accessibilityLabel="Send voice order to the store"
-            onPress={onSend}
-            scaleTo={0.96}
-            style={s.primary}
-          >
-            <Text style={s.primaryText}>Send voice to store</Text>
-          </PressableScale>
+          <>
+            {/* Saying it again is the repair that actually works, so it is the
+                one that looks like the answer. */}
+            <PressableScale
+              accessibilityRole="button"
+              accessibilityLabel="Record your order again"
+              onPress={onRetake}
+              scaleTo={0.96}
+              style={s.primary}
+            >
+              <Mic size={16} color={grocery.white} strokeWidth={2.4} />
+              <Text style={s.primaryText}>Say it again</Text>
+            </PressableScale>
+            <PressableScale
+              accessibilityRole="button"
+              accessibilityLabel="Send voice order to the store"
+              onPress={onSend}
+              scaleTo={0.96}
+              style={s.ghostWide}
+            >
+              <Text style={s.ghostText}>Send voice to store instead</Text>
+            </PressableScale>
+          </>
         )}
       </View>
     </View>
   );
+}
+
+/**
+ * Why nothing reached the cart, in the customer's terms.
+ *
+ * There are four different reasons and they used to share one line of text.
+ * They need different words because they need different actions: silence and a
+ * misheard word are fixed by saying it again, an empty shelf is not fixed by
+ * anything the customer can do, and a backend that fell over is ours to
+ * apologise for.
+ */
+function Trouble({ order }: { order: ReturnType<typeof useVoiceOrder> }) {
+  const unmatched = order.matches.filter(match => !match.productId);
+  const outOfStock = [
+    ...new Set(
+      unmatched
+        .map(match => match.unstocked)
+        .filter((name): name is string => Boolean(name)),
+    ),
+  ];
+  const everythingIsStock = unmatched.length > 0 && outOfStock.length === unmatched.length;
+
+  let title: string;
+  let detail: string;
+
+  if (order.error) {
+    title = 'That did not go through';
+    detail = order.error;
+  } else if (!order.transcript) {
+    title = "We couldn't hear anything";
+    detail =
+      'Hold the phone a little closer and say your order again — for example, "do kilo tamatar aur teen kele".';
+  } else if (everythingIsStock) {
+    title = `Out of stock right now`;
+    detail = `We don't sell ${list(outOfStock)} yet, so there was nothing to add. Say another order, or send your recording and the store will call you.`;
+  } else if (outOfStock.length > 0) {
+    title = 'We could not add any of that';
+    detail = `We don't sell ${list(outOfStock)} yet, and the rest did not match anything we stock. Try saying the item names on their own.`;
+  } else {
+    title = "We didn't catch that";
+    detail =
+      'Nothing in that matched what we sell. Say the item names on their own — like "tamatar", "kela", "palak" — and we will find them.';
+  }
+
+  return (
+    <View style={s.trouble}>
+      <View style={s.troubleIcon}>
+        <TriangleAlert size={16} color="#D8853F" strokeWidth={2.3} />
+      </View>
+      <View style={s.troubleText}>
+        <Text style={s.troubleTitle}>{title}</Text>
+        <Text style={s.troubleDetail}>{detail}</Text>
+      </View>
+    </View>
+  );
+}
+
+/** "eggs", "eggs and rice", "eggs, rice and salt". */
+function list(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 /**
@@ -509,7 +613,9 @@ function ItemRow({
             ? `${match.quantity}${match.unit ? ` ${match.unit}` : ''}${
                 unsure ? ' · please check' : ''
               }`
-            : 'Not sold here — send the recording instead'}
+            : match.unstocked
+              ? `Out of stock — we don't sell ${match.unstocked} yet`
+              : "We couldn't make this one out"}
         </Text>
       </View>
 
@@ -650,6 +756,31 @@ const s = StyleSheet.create({
   },
 
   actions: { gap: 8 },
+  trouble: {
+    flexDirection: 'row',
+    gap: 10,
+    padding: 13,
+    borderRadius: 18,
+    backgroundColor: '#FFF4E4',
+  },
+  troubleIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFE7C7',
+  },
+  troubleText: { flex: 1, gap: 3 },
+  troubleTitle: { fontSize: 14.5, fontWeight: '800', color: grocery.ink },
+  troubleDetail: { fontSize: 12.5, lineHeight: 18, color: '#6B5844' },
+  ghostWide: {
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E3F2FA',
+  },
   handing: {
     height: 52,
     borderRadius: 26,
@@ -662,8 +793,11 @@ const s = StyleSheet.create({
   handingText: { fontSize: 14, fontWeight: '800', color: grocery.blue },
   row: { flexDirection: 'row', gap: 10 },
   primary: {
+    flexDirection: 'row',
+    gap: 8,
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 13,
     borderRadius: 22,
     backgroundColor: grocery.blue,
