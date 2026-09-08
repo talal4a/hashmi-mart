@@ -23,19 +23,35 @@ export const TAB_BAR_RISE = CART_RISE;
  * drawn half over the cutout, and close enough to a normal tab's width that the
  * five slots still read as evenly spaced.
  */
+/**
+ * Width reserved for the cart.
+ *
+ * Comfortably wider than the dip, but chosen to sit close to a normal tab's
+ * width — at 84 the centre slot was 30% narrower than its neighbours and the
+ * five tabs stopped reading as evenly spaced.
+ */
 const CART_SPACE = 100;
 
 const R = 28;
 
-const NOTCH_HALF = 50;
+/**
+ * Half the dip's opening, sized to the cart plus a little air.
+ *
+ * It used to be 50 against a 46px object, which left ~27px of open cutout
+ * either side of the cart — visible gaps that made the dip look like damage
+ * rather than clearance. At 30 the cart very nearly plugs its own notch.
+ */
+const NOTCH_HALF = 30;
 
 /**
- * Shallower than before, because the cart is smaller and sits lower. A 40-deep
- * cutout under a model that rises 14px above the bar is a hole with nothing in
- * it; 22 keeps a visible cradle and leaves the pedestal — not the cutout — as
- * what the cart stands on.
+ * How far the surface dips.
+ *
+ * Shallow on purpose. The dip is no longer holding the cart — the contact
+ * shadow does that — so its whole job is to acknowledge the object, the way a
+ * cushion gives under something resting on it. Anything deeper reads as a hole
+ * the cart is falling through.
  */
-const NOTCH_DEPTH = 22;
+const NOTCH_DEPTH = 14;
 
 function silhouette(width: number): string {
   const cx = width / 2;
@@ -43,8 +59,8 @@ function silhouette(width: number): string {
   return [
     `M ${R} 0`,
     `H ${cx - NOTCH_HALF}`,
-    `C ${cx - 32} 0 ${cx - 38} ${NOTCH_DEPTH} ${cx} ${NOTCH_DEPTH}`,
-    `C ${cx + 38} ${NOTCH_DEPTH} ${cx + 32} 0 ${cx + NOTCH_HALF} 0`,
+    `C ${cx - 19} 0 ${cx - 23} ${NOTCH_DEPTH} ${cx} ${NOTCH_DEPTH}`,
+    `C ${cx + 23} ${NOTCH_DEPTH} ${cx + 19} 0 ${cx + NOTCH_HALF} 0`,
     `H ${width - R}`,
     `Q ${width} 0 ${width} ${R}`,
     `V ${H - R}`,
