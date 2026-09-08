@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useReducedMotion } from 'react-native-reanimated';
-import VoiceOrderSheet, { type ConfirmedVoiceItem } from './VoiceOrderSheet';
+import VoiceOrderSheet, {
+  type ConfirmedVoiceItem,
+  type ConfirmedVoiceOrder,
+} from './VoiceOrderSheet';
 import { FLIGHT_DURATION, useCartFlight } from '../home/cartFlight';
 import { artFor, useCart } from '../../state/cart';
 import type { RootStackParamList } from '../../navigation/RootNavigator';
@@ -70,7 +73,7 @@ export default function VoiceOrderFlow({ visible, onClose }: Props) {
   );
 
   const handoff = useCallback(
-    (items: ConfirmedVoiceItem[], transcript: string | null, missed: string[]) => {
+    (items: ConfirmedVoiceItem[], order: ConfirmedVoiceOrder) => {
       onClose();
       if (!items.length) return;
 
@@ -102,8 +105,9 @@ export default function VoiceOrderFlow({ visible, onClose }: Props) {
       after(lastLanding, () =>
         navigation.navigate('Checkout', {
           source: 'voice',
-          transcript,
-          missed: missed.length ? missed : undefined,
+          transcript: order.transcript,
+          missed: order.missed.length ? order.missed : undefined,
+          recording: order.recording ?? undefined,
         }),
       );
     },

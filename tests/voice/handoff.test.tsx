@@ -42,11 +42,7 @@ jest.mock('../../src/components/voice/VoiceOrderSheet', () => {
     default: ({
       onConfirm,
     }: {
-      onConfirm: (
-        items: unknown[],
-        transcript: string | null,
-        missed: string[],
-      ) => void;
+      onConfirm: (items: unknown[], order: Record<string, unknown>) => void;
     }) =>
       react.createElement(
         rn.Pressable,
@@ -54,7 +50,11 @@ jest.mock('../../src/components/voice/VoiceOrderSheet', () => {
           accessibilityRole: 'button',
           accessibilityLabel: 'confirm',
           onPress: () =>
-            onConfirm(mockItems, 'دو کلو ٹماٹر اور پالک', ['anday']),
+            onConfirm(mockItems, {
+              transcript: 'دو کلو ٹماٹر اور پالک',
+              missed: ['anday'],
+              recording: { uri: 'file:///order.m4a', durationMs: 4200 },
+            }),
         },
         react.createElement(rn.Text, null, 'confirm'),
       ),
@@ -184,6 +184,9 @@ describe('confirming a voice order', () => {
       // And so does what we could not sell them, or the order just arrives
       // short with nothing said about it.
       missed: ['anday'],
+      // And the recording, so checkout can play back what was actually said
+      // rather than only a machine's reading of it.
+      recording: { uri: 'file:///order.m4a', durationMs: 4200 },
     });
   });
 

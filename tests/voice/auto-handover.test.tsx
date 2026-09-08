@@ -15,6 +15,7 @@ const mockOrder = {
   setQuantity: jest.fn(),
   sendToStore: jest.fn(),
   reset: jest.fn(),
+  recording: { uri: 'file:///order.m4a', durationMs: 4200, mimeType: 'audio/m4a' },
 };
 
 jest.mock('react-native-safe-area-context', () => ({
@@ -81,18 +82,26 @@ describe('the voice sheet', () => {
     // Shown, not asked: there is no button to press here.
     expect(view.queryByLabelText('Adding 2 items to your cart')).toBeTruthy();
     expect(onConfirm).not.toHaveBeenCalled();
+    // And no competing offer to have the store call back instead: the items
+    // are already on their way, so there is nothing to choose between.
+    expect(view.queryByLabelText('Send voice order to the store')).toBeNull();
 
     await act(async () => {
       jest.advanceTimersByTime(900);
     });
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
-    const [items, transcript] = onConfirm.mock.calls[0];
+    const [items, order] = onConfirm.mock.calls[0];
     expect(items).toEqual([
       expect.objectContaining({ productId: 'banana', quantity: 1 }),
       expect.objectContaining({ productId: 'tomato', quantity: 1 }),
     ]);
-    expect(transcript).toBe('مجھے کیلا اور ٹماٹر چاہیے');
+    expect(order.transcript).toBe('مجھے کیلا اور ٹماٹر چاہیے');
+    // Carried so checkout can play back what was actually said.
+    expect(order.recording).toEqual({
+      uri: 'file:///order.m4a',
+      durationMs: 4200,
+    });
   });
 
   it('does not hand over an order it could not match', async () => {

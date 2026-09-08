@@ -24,6 +24,9 @@ import {
 import PressableScale from '../components/ui/PressableScale';
 import ProduceArt from '../components/home/ProduceArt';
 import { grocery, HOME_GUTTER, softShadow } from '../components/home/groceryTheme';
+import VoiceNotePlayer, {
+  type PlayerTone,
+} from '../components/voice/VoiceNotePlayer';
 import { useCart } from '../state/cart';
 import useProfileIdentity from '../hooks/useProfileIdentity';
 import { placeOrder } from '../services/orders';
@@ -49,6 +52,16 @@ import type { RootStackParamList } from '../navigation/RootNavigator';
 const DELIVERY_FEE = 99;
 const FREE_DELIVERY_OVER = 1500;
 
+/** On a pale card, unlike the chat's white-on-colour bubble. */
+const PLAYER_TONE: PlayerTone = {
+  control: grocery.blue,
+  icon: grocery.white,
+  waveOn: grocery.blue,
+  waveOff: '#B9DEF0',
+  text: grocery.muted,
+  status: grocery.muted,
+};
+
 type CheckoutRoute = RouteProp<RootStackParamList, 'Checkout'>;
 
 export default function CheckoutScreen() {
@@ -67,6 +80,11 @@ export default function CheckoutScreen() {
   const source = route.params?.source ?? 'browse';
   const transcript = route.params?.transcript ?? null;
   const missed = route.params?.missed ?? [];
+  const recording = route.params?.recording ?? null;
+
+  // Nothing else on this screen plays audio, so the note owns the decoder from
+  // the moment it is asked for and keeps it until the screen goes.
+  const [playing, setPlaying] = useState(false);
 
   const deliveryFee = subtotal >= FREE_DELIVERY_OVER || !count ? 0 : DELIVERY_FEE;
   const total = subtotal + deliveryFee;
@@ -183,13 +201,31 @@ export default function CheckoutScreen() {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={[s.body, { paddingBottom: 24 }]}
           >
-            {transcript ? (
+            {transcript || recording ? (
               <Animated.View entering={enter} style={s.heard}>
                 <View style={s.heardHead}>
                   <Mic size={13} color={grocery.blue} strokeWidth={2.4} />
                   <Text style={s.heardLabel}>From your voice order</Text>
                 </View>
-                <Text style={s.heardText}>{transcript}</Text>
+                {transcript ? (
+                  <Text style={s.heardText}>{transcript}</Text>
+                ) : null}
+                {/* The recording, not only what we made of it. A transcript is
+                    a machine's opinion about Urdu or Punjabi speech; the audio
+                    is the customer's own words, and it settles the question of
+                    whether we heard them right. */}
+                {recording ? (
+                  <View style={s.player}>
+                    <VoiceNotePlayer
+                      uri={recording.uri}
+                      durationMs={recording.durationMs}
+                      tone={PLAYER_TONE}
+                      label="your voice order"
+                      active={playing}
+                      onActivate={() => setPlaying(true)}
+                    />
+                  </View>
+                ) : null}
               </Animated.View>
             ) : null}
 
@@ -424,6 +460,12 @@ const s = StyleSheet.create({
     color: grocery.blue,
   },
   heardText: { fontSize: 14, lineHeight: 20, color: grocery.ink },
+  player: {
+    marginTop: 4,
+    paddingTop: 9,
+    borderTopWidth: 1,
+    borderTopColor: '#CFE9F7',
+  },
   missed: {
     backgroundColor: '#FFF4E4',
     borderRadius: 18,
