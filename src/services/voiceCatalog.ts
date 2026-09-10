@@ -66,14 +66,14 @@ const ALIASES: Record<string, readonly string[]> = {
   // is actually on the shelf.
   potato: ['آلو', 'aloo', 'alu', 'aalu', 'potato', 'potatoes'],
   onion: ['پیاز', 'pyaz', 'piyaz', 'pyaaz', 'pyaj', 'onion', 'onions'],
-  milk: ['دودھ', 'doodh', 'dudh', 'dodh', 'dood', 'milk'],
+  milk: ['دودھ', 'doodh', 'dudh', 'dodh', 'dood', 'milk', 'olpers', 'olper', 'milkpak', 'milk pack'],
   eggs: ['انڈے', 'انڈا', 'انڈوں', 'anday', 'ande', 'aanday', 'anda', 'egg', 'eggs'],
-  bread: ['روٹی', 'ڈبل روٹی', 'بریڈ', 'bread', 'double roti', 'dabal roti', 'roti'],
-  rice: ['چاول', 'chawal', 'chaval', 'chawel', 'rice'],
-  flour: ['آٹا', 'aata', 'atta', 'ata', 'flour'],
+  bread: ['روٹی', 'ڈبل روٹی', 'بریڈ', 'bread', 'double roti', 'dabal roti', 'roti', 'dawn bread'],
+  rice: ['چاول', 'chawal', 'chaval', 'chawel', 'rice', 'basmati'],
+  flour: ['آٹا', 'aata', 'atta', 'ata', 'flour', 'chakki atta'],
   sugar: ['چینی', 'cheeni', 'chini', 'chinni', 'sugar'],
-  tea: ['چائے', 'پتی', 'chai', 'chaye', 'chae', 'patti', 'tea'],
-  oil: ['تیل', 'گھی', 'tel', 'ghee', 'gheo', 'oil', 'cooking oil'],
+  tea: ['چائے', 'پتی', 'chai', 'chaye', 'chae', 'patti', 'tea', 'tapal', 'lipton'],
+  oil: ['تیل', 'گھی', 'tel', 'ghee', 'gheo', 'oil', 'cooking oil', 'dalda', 'sufi'],
   yoghurt: ['دہی', 'dahi', 'dahee', 'yoghurt', 'yogurt', 'curd'],
   orange: ['سنترہ', 'مالٹا', 'santra', 'santara', 'malta', 'orange', 'oranges'],
   chicken: ['مرغی', 'گوشت', 'murghi', 'murgi', 'murghee', 'gosht', 'chicken'],
@@ -81,6 +81,13 @@ const ALIASES: Record<string, readonly string[]> = {
   salt: ['نمک', 'namak', 'salt'],
   garlic: ['لہسن', 'lehsan', 'lasan', 'lehsun', 'garlic'],
   ginger: ['ادرک', 'adrak', 'adrakh', 'ginger'],
+  surf: ['سرف', 'سرف ایکسل', 'surf', 'surf excel', 'surfexel', 'surf excel detergent', 'detergent', 'ariel', 'bonus'],
+  coke: ['کوک', 'کوکا کولا', 'coke', 'coca cola', 'coca-cola', 'cocacola'],
+  pepsi: ['پیپسی', 'pepsi', 'pepsi cola', '7up', 'sprite'],
+  biscuit: ['بسکٹ', 'بسکوٹ', 'biscuit', 'biscuits', 'cookie', 'cookies'],
+  soap: ['صابن', 'soap', 'lux', 'lifebuoy', 'safeguard'],
+  shampoo: ['شیمپو', 'shampoo'],
+  masala: ['مصالحہ', 'masala', 'shan masala', 'national masala'],
 };
 
 /** What to call a product we know the word for but do not sell. */
@@ -102,6 +109,13 @@ const UNSTOCKED_LABELS: Record<string, string> = {
   salt: 'salt',
   garlic: 'garlic',
   ginger: 'ginger',
+  surf: 'Surf Excel',
+  coke: 'Coca-Cola',
+  pepsi: 'Pepsi',
+  biscuit: 'biscuits',
+  soap: 'soap',
+  shampoo: 'shampoo',
+  masala: 'masala',
 };
 
 /**
@@ -237,19 +251,36 @@ const FOLDED_FRACTIONS = new Map<string, { quantity: number; unit: string }>(
   Object.entries(FRACTIONS).map(([word, value]) => [normalise(word), value]),
 );
 
+const UNITS: Record<string, string> = {
+  kilo: 'kg', kg: 'kg', kgs: 'kg', 'کلو': 'kg',
+  litre: 'litre', liter: 'litre', l: 'litre', 'لیٹر': 'litre',
+  packet: 'packet', pack: 'packet', packets: 'packet', 'پیکٹ': 'packet',
+  bottle: 'bottle', bottles: 'bottle', 'بوتل': 'bottle',
+  dozen: 'dozen', darjan: 'dozen', 'درجن': 'dozen',
+  piece: 'piece', pcs: 'piece', pc: 'piece', dana: 'piece', danay: 'piece', 'دانے': 'piece',
+};
+
 /** Reads a spoken quantity out of a phrase, or nothing if none was said. */
 export function readQuantity(
   phrase: string,
 ): { quantity: number; unit?: string } | null {
   const words = normalise(phrase).split(' ');
+  let detectedUnit: string | undefined;
+
+  for (const word of words) {
+    if (UNITS[word]) {
+      detectedUnit = UNITS[word];
+    }
+  }
+
   for (const word of words) {
     const fraction = FOLDED_FRACTIONS.get(word);
-    if (fraction) return fraction;
+    if (fraction) return { quantity: fraction.quantity, unit: detectedUnit ?? fraction.unit };
     const spoken = FOLDED_NUMBERS.get(word);
-    if (spoken !== undefined) return { quantity: spoken };
+    if (spoken !== undefined) return { quantity: spoken, unit: detectedUnit };
     const digits = Number(word);
     if (Number.isFinite(digits) && digits > 0 && digits <= 99) {
-      return { quantity: digits };
+      return { quantity: digits, unit: detectedUnit };
     }
   }
   return null;
@@ -309,13 +340,6 @@ function normalise(value: string): string {
 
 /**
  * Levenshtein, with an allowance that scales with length.
- *
- * A flat two edits is too generous for short words, and grocery words are
- * short. "namak" and "palak" are two edits apart, so salt matched spinach —
- * a customer asking for one receives the other, which is precisely the
- * substitution this whole layer exists to prevent. Five letters or fewer get
- * one edit; longer words get two, where the useful cases are a dropped vowel
- * or a doubled consonant.
  */
 function isNearMiss(a: string, b: string): boolean {
   const allowance = Math.min(a.length, b.length) <= 5 ? 1 : 2;
@@ -335,7 +359,6 @@ function isNearMiss(a: string, b: string): boolean {
       );
       best = Math.min(best, current[j]);
     }
-    // Every path through this row is already too expensive.
     if (best > allowance) return false;
     previous = current;
   }
@@ -344,11 +367,6 @@ function isNearMiss(a: string, b: string): boolean {
 
 /**
  * Matches one spoken request against the catalogue.
- *
- * The tiers are ordered by how much they are trusted, and the confidence
- * returned says which one fired. A fuzzy hit is deliberately never 'high': it
- * is a candidate, and the sheet's job is to ask about it rather than to add it
- * quietly.
  */
 export function matchCatalog(
   query: string,
@@ -358,8 +376,6 @@ export function matchCatalog(
   const text = normalise(query);
   const words = text.split(' ').filter(Boolean);
 
-  // A quantity said inside the phrase beats one the model reported separately:
-  // it is the customer's own words rather than an interpretation of them.
   const read = readQuantity(text);
   const quantity = read?.quantity ?? spokenQuantity ?? 1;
   const unit = read?.unit ?? spokenUnit;
@@ -372,7 +388,6 @@ export function matchCatalog(
     }
   }
 
-  // The item word among the quantity words: "do kilo tamatar" is tomatoes.
   for (const entry of CATALOG) {
     if (entry.aliases.some(alias => words.includes(alias))) {
       return { ...base, productId: entry.id, productName: entry.name, confidence: 'high' };
@@ -395,9 +410,6 @@ export function matchCatalog(
     }
   }
 
-  // Understood, and not on the shelf. Worth saying so by name: the customer
-  // asked for something real and the answer is about our stock, not their
-  // pronunciation.
   for (const entry of UNSTOCKED) {
     const hit =
       entry.aliases.some(alias => alias === text) ||
@@ -406,8 +418,6 @@ export function matchCatalog(
     if (hit) return { ...base, confidence: 'low', unstocked: entry.name };
   }
 
-  // Heard, but not understood. Returned rather than dropped so the sheet can
-  // show it greyed out — a silently missing item is how an order arrives short.
   return { ...base, confidence: 'low' };
 }
 
@@ -415,93 +425,150 @@ export function matchCatalog(
 /* Reading the sentence itself                                                */
 /* -------------------------------------------------------------------------- */
 
-/**
- * How far back from a product word a quantity may sit.
- *
- * "do kilo tamatar" is two words; "mujhe do kilo tamatar" is three. Beyond
- * that a number belongs to something else in the sentence, and reaching for it
- * is how one item's quantity ends up on another.
- */
-const QUANTITY_LOOKBACK = 3;
+interface ExtractedQuantity {
+  quantity: number;
+  unit?: string;
+  startIndex: number;
+  endIndex: number;
+  isCorrection?: boolean;
+}
 
-function quantityBefore(
+const CONJUNCTIONS = new Set([
+  'aur', 'te', 'phir', 'bhi', 'bas', 'acha', 'theek', 'hai', 'haan', 'or', 'and', 'then',
+  'اور', 'تے', 'پھر', 'بھی', 'بس', 'اچھا', 'ٹھیک', 'ہے', 'ہاں',
+]);
+
+function findQuantitiesInInterval(
   words: readonly string[],
-  at: number,
-  taken: ReadonlySet<number>,
-): { quantity: number; unit?: string } | null {
-  for (let i = at - 1; i >= 0 && i >= at - QUANTITY_LOOKBACK; i -= 1) {
-    // Another product's own word. Whatever is behind it is that item's
-    // quantity, not this one's.
-    if (taken.has(i)) return null;
-    const word = words[i];
-    const fraction = FOLDED_FRACTIONS.get(word);
-    if (fraction) return fraction;
-    const spoken = FOLDED_NUMBERS.get(word);
-    if (spoken !== undefined) return { quantity: spoken };
-    const digits = Number(word);
-    if (Number.isFinite(digits) && digits > 0 && digits <= 99) {
-      return { quantity: digits };
+  start: number,
+  end: number,
+): ExtractedQuantity[] {
+  const result: ExtractedQuantity[] = [];
+  let i = start;
+
+  while (i < end) {
+    // 1. Customer self-correction: "doodh do nahi teen", "sorry 4", "نہیں ۳"
+    if (words[i] === 'nahi' || words[i] === 'actually' || words[i] === 'sorry' || words[i] === 'نہیں') {
+      for (let j = i + 1; j < end && j < i + 3; j += 1) {
+        const spoken = FOLDED_NUMBERS.get(words[j]);
+        const num = spoken !== undefined ? spoken : Number(words[j]);
+        if (Number.isFinite(num) && num > 0 && num <= 99) {
+          let unit: string | undefined;
+          let endIdx = j + 1;
+          if (j + 1 < end && UNITS[words[j + 1]]) {
+            unit = UNITS[words[j + 1]];
+            endIdx = j + 2;
+          }
+          result.push({ quantity: num, unit, startIndex: i, endIndex: endIdx, isCorrection: true });
+          i = endIdx;
+          break;
+        }
+        const frac = FOLDED_FRACTIONS.get(words[j]);
+        if (frac) {
+          let unit: string | undefined = frac.unit;
+          let endIdx = j + 1;
+          if (j + 1 < end && UNITS[words[j + 1]]) {
+            unit = UNITS[words[j + 1]];
+            endIdx = j + 2;
+          }
+          result.push({ quantity: frac.quantity, unit, startIndex: i, endIndex: endIdx, isCorrection: true });
+          i = endIdx;
+          break;
+        }
+      }
+      i += 1;
+      continue;
     }
+
+    // 2. Darjan / dozen: "aik darjan", "2 darjan", or standalone "darjan"
+    if (words[i] === 'darjan' || words[i] === 'dozen' || words[i] === 'درجن') {
+      result.push({ quantity: 12, unit: 'dozen', startIndex: i, endIndex: i + 1 });
+      i += 1;
+      continue;
+    }
+    if (i + 1 < end && (words[i + 1] === 'darjan' || words[i + 1] === 'dozen' || words[i + 1] === 'درجن')) {
+      const prev = FOLDED_NUMBERS.get(words[i]) ?? Number(words[i]);
+      const qty = Number.isFinite(prev) && prev > 0 ? prev * 12 : 12;
+      result.push({ quantity: qty, unit: 'dozen', startIndex: i, endIndex: i + 2 });
+      i += 2;
+      continue;
+    }
+
+    // 3. Fraction: "aadha kilo", "paao"
+    const frac = FOLDED_FRACTIONS.get(words[i]);
+    if (frac) {
+      let unit: string | undefined = frac.unit;
+      let endIdx = i + 1;
+      if (i + 1 < end && UNITS[words[i + 1]]) {
+        unit = UNITS[words[i + 1]];
+        endIdx = i + 2;
+      }
+      result.push({ quantity: frac.quantity, unit, startIndex: i, endIndex: endIdx });
+      i = endIdx;
+      continue;
+    }
+
+    // 4. Regular number or spoken word: "do kilo", "chay", "2"
+    const spoken = FOLDED_NUMBERS.get(words[i]);
+    const num = spoken !== undefined ? spoken : Number(words[i]);
+    if (Number.isFinite(num) && num > 0 && num <= 99) {
+      let unit: string | undefined;
+      let endIdx = i + 1;
+      if (i + 1 < end && UNITS[words[i + 1]]) {
+        unit = UNITS[words[i + 1]];
+        endIdx = i + 2;
+      }
+      result.push({ quantity: num, unit, startIndex: i, endIndex: endIdx });
+      i = endIdx;
+      continue;
+    }
+
+    i += 1;
   }
-  return null;
+
+  return result;
 }
 
 /**
  * Finds every product named anywhere in a spoken sentence.
- *
- * `matchCatalog` answers "which product is this phrase", which is the right
- * question for a list the model has already split up and the wrong one for a
- * sentence: asked about "کیلا اور ٹماٹر" it returns tomatoes, and the bananas
- * are simply gone. One phrase, one answer.
- *
- * This walks the words instead and takes every product it passes, which is
- * what makes it usable as a floor under the model. When the parse comes back
- * empty — a Groq outage, an exhausted quota, a malformed answer, a sentence it
- * declined to split — the customer's own words still contain "کیلا" and
- * "ٹماٹر", and the catalogue has known both all along. Nothing found was the
- * one outcome that was never true.
- *
- * Exact words only, then fuzzy for what is left. A sentence is long enough
- * that a loose match somewhere in it is nearly guaranteed, so the loose pass
- * runs only against products the exact pass did not already find, and never
- * returns 'high'.
  */
 export function scanTranscript(transcript: string): CatalogMatch[] {
   const text = normalise(transcript);
   if (!text) return [];
   const words = text.split(' ').filter(Boolean);
 
-  type Hit = { entry: CatalogEntry; at: number; said: string; confidence: MatchConfidence };
+  type Hit = { entry: CatalogEntry; at: number; phraseLength: number; said: string; confidence: MatchConfidence };
   const hits: Hit[] = [];
-  // One hit per product. "tamatar ... tamatar" is one person saying the same
-  // thing twice, not two separate items.
   const found = new Set<string>();
 
   for (let i = 0; i < words.length; i += 1) {
     const pair = i + 1 < words.length ? `${words[i]} ${words[i + 1]}` : null;
     for (const entry of CATALOG) {
       if (found.has(entry.id)) continue;
-      // Two-word aliases first, so "double roti" is not read as "roti".
       if (pair && entry.aliases.includes(pair)) {
-        hits.push({ entry, at: i, said: pair, confidence: 'high' });
+        hits.push({ entry, at: i, phraseLength: 2, said: pair, confidence: 'high' });
         found.add(entry.id);
         break;
       }
       if (entry.aliases.includes(words[i])) {
-        hits.push({ entry, at: i, said: words[i], confidence: 'high' });
+        hits.push({ entry, at: i, phraseLength: 1, said: words[i], confidence: 'high' });
         found.add(entry.id);
         break;
       }
     }
   }
 
-  // Things we understand and do not sell, so a sentence naming them can say
-  // so by name rather than leaving the customer to notice the gap.
   for (let i = 0; i < words.length; i += 1) {
+    const pair = i + 1 < words.length ? `${words[i]} ${words[i + 1]}` : null;
     for (const entry of UNSTOCKED) {
       if (found.has(entry.id)) continue;
+      if (pair && entry.aliases.includes(pair)) {
+        hits.push({ entry, at: i, phraseLength: 2, said: pair, confidence: 'low' });
+        found.add(entry.id);
+        break;
+      }
       if (entry.aliases.includes(words[i])) {
-        hits.push({ entry, at: i, said: words[i], confidence: 'low' });
+        hits.push({ entry, at: i, phraseLength: 1, said: words[i], confidence: 'low' });
         found.add(entry.id);
         break;
       }
@@ -517,30 +584,133 @@ export function scanTranscript(transcript: string): CatalogMatch[] {
         alias => alias.length >= 4 && isNearMiss(word, alias),
       );
       if (near) {
-        hits.push({ entry, at: i, said: word, confidence: 'medium' });
+        hits.push({ entry, at: i, phraseLength: 1, said: word, confidence: 'medium' });
         found.add(entry.id);
         break;
       }
     }
   }
 
-  // Back into the order they were said in, so the cart fills the way the
-  // sentence ran.
   hits.sort((a, b) => a.at - b.at);
-  const taken = new Set(hits.map(hit => hit.at));
+
+  const assignedQuantities = new Map<number, { quantity: number; unit?: string }>();
+
+  // Partition the sentence into N + 1 intervals around the identified hits
+  const intervals: ExtractedQuantity[][] = [];
+  for (let k = 0; k <= hits.length; k += 1) {
+    const start = k === 0 ? 0 : hits[k - 1].at + hits[k - 1].phraseLength;
+    const end = k === hits.length ? words.length : hits[k].at;
+    intervals.push(start < end ? findQuantitiesInInterval(words, start, end) : []);
+  }
+
+  // Pass 1: Customer self-corrections override earlier mentioned quantities
+  for (let k = 1; k <= hits.length; k += 1) {
+    const correction = intervals[k].find(q => q.isCorrection);
+    if (correction) {
+      assignedQuantities.set(k - 1, { quantity: correction.quantity, unit: correction.unit });
+    }
+  }
+
+  // Pass 2: Boundary intervals (Interval 0 -> prefix for hit 0, Interval N -> postfix for hit N-1)
+  if (!assignedQuantities.has(0) && intervals[0].length > 0) {
+    const lastQ = intervals[0][intervals[0].length - 1];
+    assignedQuantities.set(0, { quantity: lastQ.quantity, unit: lastQ.unit });
+  }
+  if (hits.length > 0 && !assignedQuantities.has(hits.length - 1) && intervals[hits.length].length > 0) {
+    const firstQ = intervals[hits.length][0];
+    assignedQuantities.set(hits.length - 1, { quantity: firstQ.quantity, unit: firstQ.unit });
+  }
+
+  // Pass 3: Multi-quantity intervals (Interval k has >= 2 quantities: first belongs to k-1, last to k)
+  for (let k = 1; k < hits.length; k += 1) {
+    const qs = intervals[k].filter(q => !q.isCorrection);
+    if (qs.length >= 2) {
+      if (!assignedQuantities.has(k - 1)) {
+        assignedQuantities.set(k - 1, { quantity: qs[0].quantity, unit: qs[0].unit });
+      }
+      if (!assignedQuantities.has(k)) {
+        assignedQuantities.set(k, { quantity: qs[qs.length - 1].quantity, unit: qs[qs.length - 1].unit });
+      }
+    }
+  }
+
+  // Pass 4: Backward resolution for single-quantity intervals
+  // If hit k already has a quantity, a quantity in interval k must belong to hit k-1.
+  for (let k = hits.length - 1; k >= 1; k -= 1) {
+    const qs = intervals[k].filter(q => !q.isCorrection);
+    if (qs.length === 1) {
+      const q = qs[0];
+      if (assignedQuantities.has(k) && !assignedQuantities.has(k - 1)) {
+        assignedQuantities.set(k - 1, { quantity: q.quantity, unit: q.unit });
+      }
+    }
+  }
+
+  // Pass 5: Forward resolution for single-quantity intervals
+  // If hit k-1 already has a quantity, a quantity in interval k must belong to hit k.
+  for (let k = 1; k < hits.length; k += 1) {
+    const qs = intervals[k].filter(q => !q.isCorrection);
+    if (qs.length === 1) {
+      const q = qs[0];
+      if (assignedQuantities.has(k - 1) && !assignedQuantities.has(k)) {
+        assignedQuantities.set(k, { quantity: q.quantity, unit: q.unit });
+      }
+    }
+  }
+
+  // Pass 6: Conjunctions and proximity for any remaining unassigned items
+  for (let k = 1; k < hits.length; k += 1) {
+    const qs = intervals[k].filter(q => !q.isCorrection);
+    if (qs.length === 1) {
+      const q = qs[0];
+      const prevUnassigned = !assignedQuantities.has(k - 1);
+      const nextUnassigned = !assignedQuantities.has(k);
+      if (prevUnassigned && !nextUnassigned) {
+        assignedQuantities.set(k - 1, { quantity: q.quantity, unit: q.unit });
+      } else if (!prevUnassigned && nextUnassigned) {
+        assignedQuantities.set(k, { quantity: q.quantity, unit: q.unit });
+      } else if (prevUnassigned && nextUnassigned) {
+        let hasConjunctionAfter = false;
+        for (let w = q.endIndex; w < hits[k].at; w += 1) {
+          if (CONJUNCTIONS.has(words[w])) {
+            hasConjunctionAfter = true;
+            break;
+          }
+        }
+        let hasConjunctionBefore = false;
+        for (let w = hits[k - 1].at + hits[k - 1].phraseLength; w < q.startIndex; w += 1) {
+          if (CONJUNCTIONS.has(words[w])) {
+            hasConjunctionBefore = true;
+            break;
+          }
+        }
+        if (hasConjunctionAfter && !hasConjunctionBefore) {
+          assignedQuantities.set(k - 1, { quantity: q.quantity, unit: q.unit });
+        } else if (hasConjunctionBefore && !hasConjunctionAfter) {
+          assignedQuantities.set(k, { quantity: q.quantity, unit: q.unit });
+        } else {
+          const distPrev = q.startIndex - (hits[k - 1].at + hits[k - 1].phraseLength);
+          const distNext = hits[k].at - q.endIndex;
+          if (distPrev <= distNext) {
+            assignedQuantities.set(k - 1, { quantity: q.quantity, unit: q.unit });
+          } else {
+            assignedQuantities.set(k, { quantity: q.quantity, unit: q.unit });
+          }
+        }
+      }
+    }
+  }
 
   const unstocked = new Set(UNSTOCKED.map(entry => entry.id));
 
-  return hits.map(hit => {
-    const read = quantityBefore(words, hit.at, taken);
+  return hits.map((hit, k) => {
+    const read = assignedQuantities.get(k);
     const base = {
       query: hit.said,
       quantity: read?.quantity ?? 1,
       unit: read?.unit,
       confidence: hit.confidence,
     };
-    // An unstocked hit is not a product: it carries a name to say out loud and
-    // deliberately no id, so nothing downstream can put it in a cart.
     return unstocked.has(hit.entry.id)
       ? { ...base, unstocked: hit.entry.name }
       : {
@@ -552,27 +722,17 @@ export function scanTranscript(transcript: string): CatalogMatch[] {
 }
 
 /**
- * The model's reading of the order, with the sentence as a floor under it.
- *
- * Neither source is trusted alone. The parse knows how to split a sentence and
- * which number belongs to which item, and it is also the part that can return
- * nothing at all — so anything it missed but the customer plainly said is
- * added from the scan, and its own items keep their quantities.
- *
- * Unmatched items from the parse are kept. "Heard, but not sold here" is
- * information the customer needs, and it is the one thing the scan cannot
- * report: it only ever finds things that are on the shelf.
+ * Reads the order with full transcript coverage validation.
  */
 export function readOrder(
   transcript: string,
   items: readonly { query: string; quantity?: number; unit?: string }[],
+  unresolvedFragments?: readonly string[],
 ): CatalogMatch[] {
   const parsed = matchOrder(items);
   const already = new Set(
     parsed.map(match => match.productId).filter(Boolean) as string[],
   );
-  // Unstocked items dedupe by name, having no id to dedupe by — otherwise the
-  // customer is told twice that we have no eggs.
   const named = new Set(
     parsed.map(match => match.unstocked).filter(Boolean) as string[],
   );
@@ -581,7 +741,43 @@ export function readOrder(
       ? !already.has(match.productId)
       : !named.has(match.unstocked ?? ''),
   );
-  return [...parsed, ...missed];
+
+  let result = [...parsed, ...missed];
+
+  // Import coverage validation dynamically or directly
+  try {
+    const { auditTranscriptCoverage, repairMissingPhrases } = require('./voiceCoverage');
+    const coverage = auditTranscriptCoverage(transcript, result, unresolvedFragments);
+    if (!coverage.isCovered && coverage.missingPhrases.length > 0) {
+      const repairs = repairMissingPhrases(coverage.missingPhrases);
+      for (const repair of repairs) {
+        if (repair.productId && !already.has(repair.productId)) {
+          already.add(repair.productId);
+          result.push(repair);
+        } else if (repair.unstocked && !named.has(repair.unstocked)) {
+          named.add(repair.unstocked);
+          result.push(repair);
+        }
+      }
+    }
+  } catch {}
+
+  // Include unresolved fragments so the user sees everything heard
+  if (unresolvedFragments && unresolvedFragments.length > 0) {
+    for (const frag of unresolvedFragments) {
+      if (!frag.trim()) continue;
+      const alreadyIncluded = result.some(m => m.query.toLowerCase() === frag.toLowerCase());
+      if (!alreadyIncluded) {
+        result.push({
+          query: frag.trim(),
+          quantity: 1,
+          confidence: 'low',
+        });
+      }
+    }
+  }
+
+  return result;
 }
 
 /** Matches a whole parsed order. */
@@ -593,10 +789,6 @@ export function matchOrder(
 
 /**
  * The order's overall confidence, taken from its weakest item.
- *
- * An order is exactly as trustworthy as the item you are least sure about:
- * averaging would let four confident matches carry one wrong one straight past
- * the customer.
  */
 export function orderConfidence(matches: readonly CatalogMatch[]): MatchConfidence {
   if (matches.length === 0) return 'low';

@@ -176,7 +176,7 @@ export async function completeChat(
       model: CHAT_MODEL,
       messages,
       temperature: 0,
-      max_tokens: 600,
+      max_tokens: 2048,
       response_format: { type: 'json_object' },
     }),
   });

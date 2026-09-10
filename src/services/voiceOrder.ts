@@ -100,6 +100,10 @@ export async function transcribeOrder(
   mimeType = 'audio/m4a',
 ): Promise<string> {
   const token = await idToken();
+  const startTime = Date.now();
+  if (__DEV__) {
+    console.log('[VoiceOrder] transcriptionStart', { uri, mimeType, timestamp: startTime });
+  }
 
   const data = await postAudio<{ text?: string }>(
     `${SUPPORT_API_URL}/voice/transcribe`,
@@ -109,20 +113,34 @@ export async function transcribeOrder(
   );
   // An empty transcript is silence, not a failure to be papered over. The
   // caller offers a re-record or sending the original.
-  return typeof data.text === 'string' ? data.text.trim() : '';
+  const text = typeof data.text === 'string' ? data.text.trim() : '';
+
+  if (__DEV__) {
+    console.log('[VoiceOrder] transcriptionEnd', {
+      durationMs: Date.now() - startTime,
+      charCount: text.length,
+    });
+  }
+
+  return text;
 }
 
 export type ParsedItem = {
   query: string;
   quantity?: number;
   unit?: string;
+  brand?: string;
   confidence?: number;
 };
 
 /** Turns a transcript into structured items. Empty is a valid answer. */
 export async function parseOrder(
   transcript: string,
-): Promise<{ items: ParsedItem[]; language?: string }> {
+): Promise<{
+  items: ParsedItem[];
+  unresolvedFragments?: string[];
+  language?: string;
+}> {
   const token = await idToken();
 
   const response = await withTimeout(signal =>
@@ -139,11 +157,60 @@ export async function parseOrder(
   );
   if (!response.ok) throw new SupportError(kindFromStatus(response.status));
 
-  const data = (await response.json()) as {
-    items?: ParsedItem[];
-    language?: string;
+  let data: any;
+  try {
+    data = await response.json();
+  } catch {
+    throw new SupportError('unavailable');
+  }
+
+  if (!data || typeof data !== 'object' || !Array.isArray(data.items)) {
+    throw new SupportError('unavailable');
+  }
+
+  const items: ParsedItem[] = [];
+  for (const raw of data.items) {
+    if (!raw || typeof raw !== 'object') throw new SupportError('unavailable');
+    const query = raw.query;
+    if (typeof query !== 'string') throw new SupportError('unavailable');
+    const trimmed = query.trim();
+    if (!trimmed) throw new SupportError('unavailable');
+
+    const item: ParsedItem = { query: trimmed };
+    if (
+      typeof raw.quantity === 'number' &&
+      Number.isFinite(raw.quantity) &&
+      raw.quantity > 0 &&
+      raw.quantity <= 99
+    ) {
+      item.quantity = raw.quantity;
+    }
+    if (typeof raw.unit === 'string' && raw.unit.trim()) {
+      item.unit = raw.unit.trim();
+    }
+    if (typeof raw.brand === 'string' && raw.brand.trim()) {
+      item.brand = raw.brand.trim();
+    }
+    if (
+      typeof raw.confidence === 'number' &&
+      Number.isFinite(raw.confidence)
+    ) {
+      item.confidence = Math.min(1, Math.max(0, raw.confidence));
+    }
+    items.push(item);
+  }
+
+  const unresolvedFragments = Array.isArray(data.unresolvedFragments)
+    ? (data.unresolvedFragments.filter(
+        (f: unknown) => typeof f === 'string' && (f as string).trim(),
+      ) as string[])
+    : undefined;
+
+  return {
+    items,
+    ...(unresolvedFragments?.length ? { unresolvedFragments } : {}),
+    ...(typeof data.language === 'string' ? { language: data.language } : {}),
   };
-  return { items: data.items ?? [], language: data.language };
 }
 
 /* -------------------------------------------------------------------------- */

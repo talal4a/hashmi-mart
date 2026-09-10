@@ -28,10 +28,10 @@ export default function CartPreview({
 }) {
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
-  const items = freshPicks.filter(item => (quantities[item.id] ?? 0) > 0);
-  const count = items.reduce((sum, item) => sum + quantities[item.id], 0);
+  const items = freshPicks.filter(item => ((quantities?.[item.id]) ?? 0) > 0);
+  const count = items.reduce((sum, item) => sum + (quantities?.[item.id] ?? 0), 0);
   const subtotal = items.reduce(
-    (sum, item) => sum + item.price * quantities[item.id],
+    (sum, item) => sum + item.price * (quantities?.[item.id] ?? 0),
     0,
   );
   return (

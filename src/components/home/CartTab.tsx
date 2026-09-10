@@ -228,6 +228,7 @@ export default function CartTab({ count, active = false, onPress }: Props) {
             ? `Cart, ${count} ${count === 1 ? 'item' : 'items'}`
             : 'Cart'
         }
+        accessibilityValue={{ text: `${count} items` }}
         testID="home-cart"
         onTouchStart={down}
         onTouchEnd={up}

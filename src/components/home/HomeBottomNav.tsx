@@ -11,6 +11,7 @@ import { ClipboardList, Home, LayoutGrid, User } from 'lucide-react-native';
 import PressableScale from '../ui/PressableScale';
 import CartTab, { CART_RISE } from './CartTab';
 import { grocery } from './groceryTheme';
+import { selectCartCount, useCartStore } from '../../stores/cartStore';
 
 export const TAB_BAR_HEIGHT = 72;
 export const TAB_BAR_GAP = 12;
@@ -38,15 +39,15 @@ const R = 28;
  * Half the dip's opening, sized to the cart plus a little air.
  *
  * It used to be 50 against a 46px object, which left ~27px of open cutout
- * either side of the cart — visible gaps that made the dip look like damage
- * rather than clearance. At 30 the cart very nearly plugs its own notch.
+ * framing nothing; 36 gives 13px clearance on either side and hugs the wheels
+ * instead of stranding them.
  */
-const NOTCH_HALF = 30;
+const NOTCH_HALF = 36;
 
 /**
- * How far the surface dips.
+ * Depth of the dip below the bar's top edge.
  *
- * Shallow on purpose. The dip is no longer holding the cart — the contact
+ * Matched to `CART_RISE` so the cart stays on the waterline. The contact
  * shadow does that — so its whole job is to acknowledge the object, the way a
  * cushion gives under something resting on it. Anything deeper reads as a hole
  * the cart is falling through.
@@ -85,7 +86,7 @@ export type HomeTab = (typeof TABS)[number]['key'] | 'cart';
 type Props = {
   onChange?: (tab: HomeTab) => void;
   onOpenCart: () => void;
-  cartCount: number;
+  cartCount?: number;
   blurTarget?: RefObject<View | null>;
   badges?: Partial<Record<HomeTab, number>>;
 };
@@ -96,6 +97,8 @@ export default function HomeBottomNav({
   cartCount,
   badges,
 }: Props) {
+  const storeCount = useCartStore(selectCartCount);
+  const resolvedCartCount = cartCount ?? storeCount;
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
   const [active, setActive] = useState<HomeTab>('home');
@@ -193,7 +196,7 @@ export default function HomeBottomNav({
 
         <View pointerEvents="box-none" style={s.cartSlot}>
           <CartTab
-            count={cartCount}
+            count={resolvedCartCount}
             active={active === 'cart'}
             onPress={() => {
               setActive('cart');

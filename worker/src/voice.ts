@@ -24,62 +24,79 @@ import { GroqError, transcribe, completeChat, type ChatTurn } from './groq';
  * single order, and forcing one turns the other two into transliterated noise.
  */
 const GROCERY_PROMPT = [
-  'HashmiMart grocery order in Urdu, Roman Urdu, Punjabi or English.',
-  // Urdu script first: this is what a genuinely Urdu order comes back as, and
-  // biasing towards the right spellings of these words is most of the accuracy
-  // on the language that was failing.
+  'HashmiMart grocery shopping voice order from a customer in Pakistan.',
+  'Urdu, Roman Urdu, Punjabi, Roman Punjabi, English, or a mixture of these languages.',
+  'Transcribe the entire recording from beginning to end. Preserve every grocery item, brand name, quantity, unit, size, and variant.',
   'ایک دو تین چار پانچ چھ سات آٹھ نو دس درجن آدھا کلو پاؤ پیکٹ بوتل ڈبہ تھیلا۔',
-  'ٹماٹر کیلا پالک سیب کھیرا آلو پیاز دودھ دہی انڈے آٹا چاول چینی چائے پتی نمک',
-  'تیل گھی دال چنا ادرک لہسن مرغی گوشت مچھلی روٹی بریڈ سنترہ مالٹا۔',
-  'Quantities: aik, ek, ik, do, teen, trai, chaar, paanch, panj, chay, saat,',
-  'aath, nau, das, aadha kilo, paao, dozen, darjan, packet, bottle, dabba, thaila.',
-  'Items: doodh, dahi, anday, aata, chawal, cheeni, chai, patti, namak, tel,',
-  'ghee, dal, chana, aloo, pyaz, tamatar, adrak, lehsan, kela, seb, santra,',
-  'malta, palak, saag, kheera, kakri, gosht, murghi, machli, bread, biscuit.',
+  'ٹماٹر کیلا پالک سیب کھیرا آلو پیاز دودھ دہی انڈے آٹا چاول چینی چائے پتی نمک سرف کوک پیپسی۔',
+  'تیل گھی دال چنا ادرک لہسن مرغی گوشت مچھلی روٹی بریڈ سنترہ مالٹا صابن شیمپو بسکٹ مصالحہ۔',
+  'Quantities: aik, ek, ik, do, teen, trai, chaar, paanch, panj, chay, chhe, saat,',
+  'aath, nau, das, aadha kilo, paao, pao, dozen, darjan, packet, pack, bottle, dabba, thaila, litre, liter, kg.',
+  'Items and brands: doodh, milk, Olpers, olper, milkpak, atta, chawal, cheeni, sugar, ghee, dalda, sufi, daal,',
+  'anda, anday, eggs, bread, oil, Surf, Surf Excel, Ariel, Coke, Coca-Cola, Pepsi, 7up, Sprite, biscuits,',
+  'shampoo, soap, chai, patti, Tapal, Lipton, namak, Shan masala, National, aloo, pyaz, tamatar, adrak,',
+  'lehsan, kela, seb, santra, malta, palak, kheera, gosht, murghi, machli.',
+  'Do not summarize. Do not omit repeated items. Do not stop after the first few products.',
 ].join(' ');
 
 /**
- * The parser's rules.
+ * The parser's master instructions.
  *
- * The hard one is the last: it may not invent a product. A model asked to
- * normalise a shopping list will happily produce something plausible for a word
- * it did not understand, and a plausible wrong item is worse than a missing one
- * — the customer confirms a list that looks right and receives something else.
- * Anything unclear comes back with low confidence and the original words
- * attached, so the app can ask about that item alone.
+ * Enforces reading the ENTIRE transcript from start to finish, handling customer
+ * self-corrections (latest correction wins), preserving late items after pauses
+ * or fillers, and extracting every requested item without arbitrary truncation.
  */
-const PARSE_SYSTEM = `You convert a spoken Pakistani grocery order into structured items.
+const PARSE_SYSTEM = `You are HashmiMart's grocery-order interpretation engine for a grocery delivery application in Pakistan.
 
-The speech may be Urdu, Roman Urdu, Punjabi, English, or a mix. Normalise
-quantity words: aik/ek=1, do=2, teen=3, chaar=4, paanch=5, chay=6, saat=7,
-aath=8, nau=9, das=10, aadha kilo=0.5 kg, paao/pao=0.25 kg, darjan/dozen=12.
+The input is a transcript produced from a customer's complete voice recording.
 
-Return ONLY a JSON object, no prose, no code fence:
+IMPORTANT RULES:
+1. READ THE ENTIRE TRANSCRIPT: Read the entire customer transcript from the first word to the final word before producing any result. Never prioritize only the beginning of the transcript. Products may be added, removed, corrected, or clarified at any point, including the final sentence.
+2. EXTRACT EVERY REQUESTED ITEM: Scan the complete transcript for all products, brands, quantities, units, sizes, and variants. Never stop extraction after finding the first valid items. Your goal is COMPLETE COVERAGE.
+3. CUSTOMER SELF-CORRECTIONS: Customers frequently correct themselves as they think. The latest explicit correction ALWAYS wins.
+   - Example: "doodh do... nahi teen kar do" -> Milk quantity 3 (NOT 2, NOT both).
+   - Example: "bread do... actually bread aik" -> Bread quantity 1.
+   - Example: "Coke do, Pepsi nahi" -> Coke quantity 2, and DO NOT add Pepsi.
+4. ITEMS AFTER FILLERS OR PAUSES: Words like "bas", "acha", "phir", "aur haan", "theek hai" or pauses must NEVER make you stop or discard what comes after.
+   - Example: "do doodh aur aik bread... bas... acha anday bhi chay kar dena... aur Coke do bottles" -> must extract Milk x2, Bread x1, Eggs x6, Coke x2.
+5. LANGUAGE & NORMALIZATION:
+   - The speech may be in Urdu (Urdu script or Roman Urdu), Punjabi (Shahmukhi or Roman Punjabi), English, or any mixture.
+   - Normalise Pakistani number words: aik/ek/ik/one=1, do/two=2, teen/trai/three=3, chaar/char/four=4, paanch/panj/five=5, chay/chhe/six=6, saat/seven=7, aath/eight=8, nau/nine=9, das/ten=10, darjan/dozen=12, half dozen=6.
+   - Units: kilo/kg, aadha kilo=0.5 kg, paao/pao=0.25 kg, litre/liter, packet/pack, bottle, dabba, piece/pcs.
+   - "query" is the normalized grocery item or brand name (in English where standard, e.g. "milk", "bread", "eggs", "sugar", "tomato", "banana", "potato", "onion", "Surf Excel", "Coke", "Pepsi", "Tapal tea", "cooking oil").
+6. UNRESOLVED / UNCLEAR FRAGMENTS:
+   - If something sounds grocery-related but is unclear or unintelligible, do NOT invent or drop it. Place it in "unresolvedFragments" with the exact phrase heard so the customer can clarify.
+7. NO HALLUCINATIONS:
+   - Do NOT invent prices.
+   - Do NOT invent items that were not requested.
+   - Do NOT summarize ("customer wants groceries").
+8. FINAL COVERAGE SCAN:
+   - Before returning, scan the transcript from start to end to verify every grocery phrase is accounted for.
 
-{"items":[{"query":"...","quantity":1,"unit":"kg"|"g"|"litre"|"ml"|"unit"|"packet","confidence":0.0-1.0}],"language":"ur"|"pa"|"en"|"mixed"}
-
-Rules:
-- "query" is the item as the speaker meant it. Give plain English where the word
-  is a common grocery item (ٹماٹر/tamatar -> tomato, کیلا/kela -> banana,
-  پالک/palak -> spinach, کھیرا/kheera -> cucumber, سیب/seb -> apple,
-  دودھ/doodh -> milk, انڈے/anday -> eggs, آلو/aloo -> potato). This holds for
-  Urdu script exactly as it does for Roman: translate the word, do not transcribe
-  it back. If you do not recognise the word, return it exactly as spoken —
-  including in Urdu script — rather than guessing at an English one.
-- NEVER invent an item that was not spoken. If a word is unclear, still return
-  it with the words you heard and a confidence below 0.5.
-- Omit quantity rather than guessing it. An absent quantity is recoverable; a
-  wrong one is not.
-- If nothing orderable was said, return {"items":[],"language":"..."}.`;
+Return ONLY a valid JSON object matching this schema (no markdown fences, no explanatory prose):
+{
+  "items": [
+    {
+      "query": "milk",
+      "quantity": 2,
+      "unit": "packet",
+      "brand": "Olpers",
+      "confidence": 0.95
+    }
+  ],
+  "unresolvedFragments": [],
+  "language": "ur" | "pa" | "en" | "mixed"
+}`;
 
 export type ParsedItem = {
   query: string;
   quantity?: number;
   unit?: string;
+  brand?: string;
   confidence?: number;
 };
 
-/** Transcribes, with the grocery bias applied. */
+/** Transcribes, with the comprehensive grocery bias applied. */
 export async function transcribeVoiceOrder(
   key: string,
   audio: Blob,
@@ -90,21 +107,19 @@ export async function transcribeVoiceOrder(
 }
 
 /**
- * Turns a transcript into items, or into nothing.
- *
- * A model that will not produce valid JSON is a model whose answer cannot be
- * trusted with an order, so a parse failure returns an empty list rather than a
- * salvage attempt. Empty is a state the app already handles — it offers to send
- * the original recording — and that is a better outcome than a half-read list
- * the customer has to audit.
+ * Turns a transcript into items with complete coverage.
  */
 export async function parseVoiceOrder(
   key: string,
   transcript: string,
-): Promise<{ items: ParsedItem[]; language?: string }> {
+): Promise<{
+  items: ParsedItem[];
+  unresolvedFragments?: string[];
+  language?: string;
+}> {
   const turns: ChatTurn[] = [
     { role: 'system', content: PARSE_SYSTEM },
-    { role: 'user', content: transcript.slice(0, 2000) },
+    { role: 'user', content: transcript.slice(0, 6000) },
   ];
 
   let raw: string;
@@ -115,44 +130,54 @@ export async function parseVoiceOrder(
     throw new GroqError('upstream', 'Parse failed');
   }
 
-  // Models add fences even when told not to; stripping one is cheaper than
-  // failing an otherwise good answer.
+  // Strip markdown code fences if present.
   const body = raw.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
 
   try {
     const parsed = JSON.parse(body) as {
       items?: unknown;
+      unresolvedFragments?: unknown;
       language?: unknown;
     };
     const items = Array.isArray(parsed.items) ? parsed.items : [];
+    const unresolvedFragments = Array.isArray(parsed.unresolvedFragments)
+      ? (parsed.unresolvedFragments.filter(f => typeof f === 'string' && f.trim()) as string[])
+      : undefined;
+
     return {
       items: items.flatMap(item => {
         const query = (item as ParsedItem)?.query;
         if (typeof query !== 'string' || !query.trim()) return [];
         const quantity = (item as ParsedItem)?.quantity;
         const confidence = (item as ParsedItem)?.confidence;
+        const brand = (item as ParsedItem)?.brand;
         return [
           {
             query: query.trim().slice(0, 80),
             quantity:
-              typeof quantity === 'number' && quantity > 0 && quantity <= 99
+              typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0 && quantity <= 99
                 ? quantity
                 : undefined,
             unit:
               typeof (item as ParsedItem)?.unit === 'string'
                 ? (item as ParsedItem).unit
                 : undefined,
+            brand:
+              typeof brand === 'string' && brand.trim()
+                ? brand.trim().slice(0, 50)
+                : undefined,
             confidence:
-              typeof confidence === 'number' ? Math.min(1, Math.max(0, confidence)) : undefined,
+              typeof confidence === 'number' && Number.isFinite(confidence)
+                ? Math.min(1, Math.max(0, confidence))
+                : undefined,
           },
         ];
       }),
+      unresolvedFragments,
       language:
         typeof parsed.language === 'string' ? parsed.language : undefined,
     };
   } catch {
-    // Not salvageable, and not worth guessing at: the app falls back to sending
-    // the recording, which is the safety layer this whole design rests on.
     return { items: [] };
   }
 }

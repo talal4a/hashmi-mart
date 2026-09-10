@@ -43,6 +43,7 @@ export type VoiceOrderState = {
   stage: VoiceStage;
   transcript: string;
   matches: CatalogMatch[];
+  unresolvedFragments: string[];
   confidence: MatchConfidence;
   /** Reference the customer can quote. Present once the store has it. */
   reference: string | null;
@@ -53,6 +54,7 @@ const EMPTY: VoiceOrderState = {
   stage: 'idle',
   transcript: '',
   matches: [],
+  unresolvedFragments: [],
   confidence: 'low',
   reference: null,
   error: null,
@@ -61,20 +63,10 @@ const EMPTY: VoiceOrderState = {
 export default function useVoiceOrder() {
   const [state, setState] = useState<VoiceOrderState>(EMPTY);
   const recording = useRef<Recording | null>(null);
+  const activeSessionId = useRef(0);
 
   /**
    * Whether late responses may still set state.
-   *
-   * Owned here rather than exposed for the screen to call, which is how this
-   * broke: `dispose` was a fresh function every render, so a caller wiring it
-   * up as `useEffect(() => order.dispose, [order.dispose])` re-ran the effect
-   * on every render and fired the *previous* cleanup each time. The flag went
-   * false immediately after the first state change, every update after it was
-   * dropped, and the sheet sat on "Listening to your order…" for ever with no
-   * error and nothing in the logs.
-   *
-   * A lifecycle that only the hook can get wrong is a lifecycle only the hook
-   * has to get right.
    */
   const mounted = useRef(true);
   useEffect(() => {
@@ -85,19 +77,16 @@ export default function useVoiceOrder() {
   }, []);
 
   const reset = useCallback(() => {
+    activeSessionId.current += 1;
     recording.current = null;
     setState(EMPTY);
   }, []);
 
   /**
-   * Runs the AI over a finished recording.
-   *
-   * Every failure lands in the same place: the recording is held, the error is
-   * friendly, and the sheet still offers to send the original. A Groq quota
-   * exhausted mid-order is not an ordering failure — it is the moment the
-   * fallback exists for.
+   * Runs the AI over a finished recording with strict full-transcript processing.
    */
   const interpret = useCallback(async (result: Recording) => {
+    const sessionId = ++activeSessionId.current;
     recording.current = result;
     setState({ ...EMPTY, stage: 'transcribing' });
 
@@ -106,7 +95,7 @@ export default function useVoiceOrder() {
       transcript = await transcribeOrder(result.uri, result.mimeType);
     } catch (caught) {
       const kind = caught instanceof SupportError ? caught.kind : 'unavailable';
-      if (!mounted.current) return;
+      if (!mounted.current || activeSessionId.current !== sessionId) return;
       setState({
         ...EMPTY,
         stage: 'review',
@@ -115,7 +104,7 @@ export default function useVoiceOrder() {
       return;
     }
 
-    if (!mounted.current) return;
+    if (!mounted.current || activeSessionId.current !== sessionId) return;
     if (!transcript) {
       // Silence, or nothing recognisable. Not a failure to paper over: the
       // sheet says so and offers a re-record or sending the audio as-is.
@@ -127,32 +116,44 @@ export default function useVoiceOrder() {
 
     try {
       const parsed = await parseOrder(transcript);
-      if (!mounted.current) return;
-      // The transcript is read as well as the model's list, and anything the
-      // model missed but the customer plainly said is added from it.
-      const matches = readOrder(transcript, parsed.items);
+      if (!mounted.current || activeSessionId.current !== sessionId) return;
+
+      const matches = readOrder(
+        transcript,
+        parsed.items,
+        parsed.unresolvedFragments,
+      );
+
+      if (__DEV__) {
+        console.log('=== VOICE DEBUG ===');
+        console.log(`Recording duration: ${(result.durationMs / 1000).toFixed(1)}s`);
+        console.log(`Transcript characters: ${transcript.length}`);
+        console.log(`Transcript: "${transcript}"`);
+        console.log(`Extracted items: ${parsed.items.length}`);
+        console.log(`Final catalog matches: ${matches.length}`);
+        console.log(`Unresolved: ${parsed.unresolvedFragments?.length ?? 0}`);
+      }
+
       setState({
         stage: 'review',
         transcript,
         matches,
+        unresolvedFragments: parsed.unresolvedFragments ?? [],
         confidence: orderConfidence(matches),
         reference: null,
         error: null,
       });
     } catch (caught) {
       const kind = caught instanceof SupportError ? caught.kind : 'unavailable';
-      if (!mounted.current) return;
-      // The transcript survives a failed parse, which is the point of doing
-      // them separately: the customer can still see what was heard.
-      // A dead parse is not a dead order. The words are already here and the
-      // catalogue can read them, so the sentence is scanned directly rather
-      // than handing back an empty list with an apology on it.
+      if (!mounted.current || activeSessionId.current !== sessionId) return;
+
       const matches = scanTranscript(transcript);
       setState({
         ...EMPTY,
         stage: 'review',
         transcript,
         matches,
+        unresolvedFragments: [],
         confidence: orderConfidence(matches),
         error: matches.length ? null : supportErrorMessage(kind),
       });

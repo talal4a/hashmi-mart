@@ -353,8 +353,6 @@ export default function OrderSlip({
           </Animated.View>
         </Animated.View>
 
-        {/* The cutter runs in the slot, above the paper and below the housing's
-            lip, which is where a cutter is. */}
         <Blade blade={blade} span={span} />
       </View>
 
