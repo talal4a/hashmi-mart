@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   useAnimatedReaction,
@@ -16,6 +16,8 @@ import Animated, {
 import { tapSend } from '../voice/haptics';
 import CartMark from './CartMark';
 import { useCartFlight } from './cartFlight';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 /**
  * The centre cart: object, contact shadow, badge and label.
@@ -220,22 +222,15 @@ export default function CartTab({ count, active = false, onPress }: Props) {
 
   return (
     <View style={s.slot} pointerEvents="box-none">
-      <Animated.View
-        accessible
+      <AnimatedPressable
         accessibilityRole="button"
-        accessibilityLabel={
-          count > 0
-            ? `Cart, ${count} ${count === 1 ? 'item' : 'items'}`
-            : 'Cart'
-        }
+        accessibilityLabel="Cart"
         accessibilityValue={{ text: `${count} items` }}
         testID="home-cart"
-        onTouchStart={down}
-        onTouchEnd={up}
-        onTouchCancel={up}
+        onPressIn={down}
+        onPressOut={up}
         style={s.hit}
-        onStartShouldSetResponder={() => true}
-        onResponderRelease={() => {
+        onPress={() => {
           tapSend();
           onPress();
         }}
@@ -268,7 +263,7 @@ export default function CartTab({ count, active = false, onPress }: Props) {
             <Text style={s.badgeText}>{count > 99 ? '99+' : count}</Text>
           </Animated.View>
         ) : null}
-      </Animated.View>
+      </AnimatedPressable>
 
       <Text style={[s.label, active && s.labelActive]} numberOfLines={1}>
         Cart

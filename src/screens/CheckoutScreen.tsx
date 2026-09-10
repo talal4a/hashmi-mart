@@ -200,6 +200,13 @@ export default function CheckoutScreen() {
 
   const goHome = useCallback(() => navigation.navigate('Home'), [navigation]);
 
+  const loadTestVoiceOrder = useCallback(() => {
+    addMany([
+      { id: 'tomato', quantity: 2 },
+      { id: 'banana', quantity: 1 },
+    ]);
+  }, [addMany]);
+
   if (placed) {
     return (
       <Confirmed
@@ -210,13 +217,6 @@ export default function CheckoutScreen() {
       />
     );
   }
-
-  const loadTestVoiceOrder = useCallback(() => {
-    addMany([
-      { id: 'tomato', quantity: 2 },
-      { id: 'banana', quantity: 1 },
-    ]);
-  }, [addMany]);
 
   const enter = reduced ? undefined : FadeInDown.duration(240);
 
@@ -247,7 +247,7 @@ export default function CheckoutScreen() {
             accessibilityRole="button"
             accessibilityLabel="Test Voice Order Flow"
             onPress={loadTestVoiceOrder}
-            style={[s.primary, { marginBottom: 12, backgroundColor: grocery.blue }]}
+            style={[s.primary, { alignSelf: 'stretch', marginBottom: 12 }]}
           >
             <Text style={s.primaryText}>Test Voice Order Flow</Text>
           </PressableScale>
@@ -669,6 +669,15 @@ const s = StyleSheet.create({
   disabled: { opacity: 0.5 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 28 },
   emptyTitle: { fontSize: 17, fontWeight: '800', color: grocery.ink },
+  ghostWide: {
+    alignSelf: 'stretch',
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E3F2FA',
+  },
+  ghostText: { fontSize: 15, fontWeight: '800', color: '#2C6B87' },
   tick: {
     width: 52,
     height: 52,

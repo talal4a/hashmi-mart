@@ -14,6 +14,7 @@ import type { freshPicks } from '../../data/groceryHome';
 import ProduceArt from './ProduceArt';
 import { useCartFlight } from './cartFlight';
 import { grocery as c } from './groceryTheme';
+import { useCartStore } from '../../stores/cartStore';
 
 export const PRODUCT_CARD_WIDTH = 178;
 
@@ -244,6 +245,10 @@ export default function FreshProductCard({
   };
 
   const wellSize = width - 20;
+  const storeQty = useCartStore(s => s.quantities[item.id] ?? 0);
+  const resolvedQty = quantity ?? storeQty;
+  const resolvedOnAdjust =
+    onAdjust ?? ((delta: number) => useCartStore.getState().adjustQuantity(item.id, delta));
 
   return (
     <Animated.View style={card}>
@@ -295,8 +300,8 @@ export default function FreshProductCard({
             </View>
             <AddControl
               label={item.name}
-              quantity={quantity}
-              onAdjust={onAdjust}
+              quantity={resolvedQty}
+              onAdjust={resolvedOnAdjust}
               artRef={artRef}
               art={item.art}
             />

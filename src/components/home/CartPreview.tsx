@@ -13,6 +13,7 @@ import { freshPicks } from '../../data/groceryHome';
 import ProduceArt from './ProduceArt';
 import PressableScale from '../ui/PressableScale';
 import { grocery } from './groceryTheme';
+import { useCartStore } from '../../stores/cartStore';
 
 /** Review the current browsing session's selections; checkout is a separate flow. */
 export default function CartPreview({
@@ -22,16 +23,21 @@ export default function CartPreview({
   onClose,
 }: {
   visible: boolean;
-  quantities: Record<string, number>;
-  onAdjust: (id: string, delta: number) => void;
+  quantities?: Record<string, number>;
+  onAdjust?: (id: string, delta: number) => void;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
-  const items = freshPicks.filter(item => ((quantities?.[item.id]) ?? 0) > 0);
-  const count = items.reduce((sum, item) => sum + (quantities?.[item.id] ?? 0), 0);
+  const storeQuantities = useCartStore(s => s.quantities);
+  const resolvedQuantities = quantities ?? storeQuantities;
+  const resolvedOnAdjust =
+    onAdjust ?? ((id: string, delta: number) => useCartStore.getState().adjustQuantity(id, delta));
+
+  const items = freshPicks.filter(item => ((resolvedQuantities?.[item.id]) ?? 0) > 0);
+  const count = items.reduce((sum, item) => sum + (resolvedQuantities?.[item.id] ?? 0), 0);
   const subtotal = items.reduce(
-    (sum, item) => sum + item.price * (quantities?.[item.id] ?? 0),
+    (sum, item) => sum + item.price * (resolvedQuantities?.[item.id] ?? 0),
     0,
   );
   return (
@@ -90,23 +96,23 @@ export default function CartPreview({
                     <Text style={s.name}>{item.name}</Text>
                     <Text style={s.subtitle}>{item.meta}</Text>
                     <Text style={s.price}>
-                      Rs. {item.price * quantities[item.id]}
+                      Rs. {item.price * (resolvedQuantities[item.id] ?? 0)}
                     </Text>
                   </View>
                   <View style={s.stepper}>
                     <PressableScale
                       accessibilityRole="button"
                       accessibilityLabel={`Remove one ${item.name}`}
-                      onPress={() => onAdjust(item.id, -1)}
+                      onPress={() => resolvedOnAdjust(item.id, -1)}
                       style={s.step}
                     >
                       <Minus size={16} color={grocery.blue} />
                     </PressableScale>
-                    <Text style={s.quantity}>{quantities[item.id]}</Text>
+                    <Text style={s.quantity}>{resolvedQuantities[item.id] ?? 0}</Text>
                     <PressableScale
                       accessibilityRole="button"
                       accessibilityLabel={`Add another ${item.name}`}
-                      onPress={() => onAdjust(item.id, 1)}
+                      onPress={() => resolvedOnAdjust(item.id, 1)}
                       style={s.step}
                     >
                       <Plus size={16} color={grocery.blue} />
