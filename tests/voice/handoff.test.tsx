@@ -1,11 +1,17 @@
 import { render, fireEvent, act } from '@testing-library/react-native';
 import { Text } from 'react-native';
 import { CartProvider, useCart } from '../../src/state/cart';
-import VoiceOrderFlow from '../../src/components/voice/VoiceOrderFlow';
+import VoiceOrderFlow, {
+  SETTLE_MS,
+  SHEET_DISMISS_MS,
+  STAGGER_MS,
+} from '../../src/components/voice/VoiceOrderFlow';
+import { FLIGHT_DURATION } from '../../src/components/home/cartFlight';
 import type { ConfirmedVoiceItem } from '../../src/components/voice/VoiceOrderSheet';
 
 const mockNavigate = jest.fn();
 const mockFly = jest.fn();
+const mockSalvo = jest.fn();
 
 const mockItems: ConfirmedVoiceItem[] = [
   { productId: 'tomato', quantity: 2, origin: { x: 40, y: 300, size: 56 } },
@@ -21,6 +27,7 @@ jest.mock('../../src/components/home/cartFlight', () => ({
   ...jest.requireActual('../../src/components/home/cartFlight'),
   useCartFlight: () => ({
     fly: mockFly,
+    flySalvo: mockSalvo,
     setTarget: jest.fn(),
     arrivals: { value: 0 },
   }),
@@ -112,6 +119,7 @@ const basket = (view: View) =>
 beforeEach(() => {
   mockNavigate.mockClear();
   mockFly.mockClear();
+  mockSalvo.mockClear();
 });
 
 describe('confirming a voice order', () => {
@@ -126,28 +134,35 @@ describe('confirming a voice order', () => {
     // The sheet goes at once. Nothing else does: a flight sent while a Modal is
     // up is drawn underneath it.
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(mockFly).not.toHaveBeenCalled();
+    expect(mockSalvo).not.toHaveBeenCalled();
     expect(basket(view)).toEqual({});
   });
 
-  it('flies each item into the cart, one after another', async () => {
+  it('sends the whole order as one salvo, spaced rather than simultaneous', async () => {
     const view = await render(<Harness onClose={jest.fn()} />);
     await act(async () => {
       fireEvent.press(view.getByLabelText('confirm'));
     });
 
-    // First item, once the sheet is out of the way.
-    await advance(320);
-    expect(mockFly).toHaveBeenCalledTimes(1);
-    expect(mockFly).toHaveBeenLastCalledWith(
-      expect.objectContaining({ x: 40, y: 300, size: 56 }),
-    );
-    // The count rises with the departure, not the arrival.
-    expect(basket(view)).toEqual({ tomato: 2 });
+    await advance(SHEET_DISMISS_MS);
 
-    // Second item, a stagger later — not at the same moment as the first.
-    await advance(160);
-    expect(mockFly).toHaveBeenCalledTimes(2);
+    // One call, not one per item. A chain of timers fired a cart update between
+    // every departure and every landing, so React re-rendered the screen in the
+    // middle of each flight it was drawing; the spacing belongs on the UI
+    // thread, where the animation already is.
+    expect(mockSalvo).toHaveBeenCalledTimes(1);
+    const [requests, stagger] = mockSalvo.mock.calls[0] as [
+      { x: number; y: number; size: number; art: number }[],
+      number,
+    ];
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toEqual(expect.objectContaining({ x: 40, y: 300, size: 56 }));
+    // Still staggered — simultaneous flights read as one blurred movement and
+    // make the cart react three times over itself.
+    expect(stagger).toBe(STAGGER_MS);
+
+    // And the count rises with the departure, not the arrival — all of it at
+    // once, as one update.
     expect(basket(view)).toEqual({ tomato: 2, spinach: 1 });
     expect(view.getByTestId('count').props.children).toBe(3);
   });
@@ -157,13 +172,12 @@ describe('confirming a voice order', () => {
     await act(async () => {
       fireEvent.press(view.getByLabelText('confirm'));
     });
-    await advance(320 + 160);
+    await advance(SHEET_DISMISS_MS);
 
     // Tomato and spinach are different illustrations; a flight that sent the
     // same one twice would look like the wrong item going in.
-    const [first] = mockFly.mock.calls[0] as [{ art: number }];
-    const [second] = mockFly.mock.calls[1] as [{ art: number }];
-    expect(first.art).not.toBe(second.art);
+    const [requests] = mockSalvo.mock.calls[0] as [{ art: number }[]];
+    expect(requests[0].art).not.toBe(requests[1].art);
   });
 
   it('opens checkout once the last item has landed, not before', async () => {
@@ -173,10 +187,10 @@ describe('confirming a voice order', () => {
     });
 
     // Both have left, the second is still in the air.
-    await advance(320 + 160);
+    await advance(SHEET_DISMISS_MS + STAGGER_MS);
     expect(mockNavigate).not.toHaveBeenCalled();
 
-    await advance(460 + 220);
+    await advance(FLIGHT_DURATION + SETTLE_MS);
     expect(mockNavigate).toHaveBeenCalledWith('Checkout', {
       source: 'voice',
       // The sentence travels with the order: Urdu and Punjabi are matched
@@ -203,7 +217,7 @@ describe('confirming a voice order', () => {
     });
     await advance(5000);
 
-    expect(mockFly).not.toHaveBeenCalled();
+    expect(mockSalvo).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -10,21 +9,21 @@ import {
 } from 'react-native';
 import type { LayoutRectangle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
-  FadeIn,
-  FadeInDown,
-  FadeOut,
-  useReducedMotion,
-} from 'react-native-reanimated';
+import Animated, { FadeInDown, useReducedMotion } from 'react-native-reanimated';
 import { Check, Mic, TriangleAlert, X } from 'lucide-react-native';
 import PressableScale from '../ui/PressableScale';
 import { grocery } from '../home/groceryTheme';
 import useVoiceRecorder, { formatDuration } from '../../hooks/useVoiceRecorder';
 import useVoiceOrder from '../../hooks/useVoiceOrder';
-import type { CatalogMatch } from '../../services/voiceCatalog';
 import AnimatedMic from './AnimatedMic';
 import VoiceWaveform from './VoiceWaveform';
-import { tapCancel, tapHandoff, tapRecordStart, tapSend } from './haptics';
+import {
+  VoiceHandoff,
+  VoiceItemRow,
+  VoicePulse,
+  VoiceSteps,
+} from './VoiceReview';
+import { tapHandoff, tapRecordStart, tapSend } from './haptics';
 
 /**
  * Voice Order, end to end.
@@ -254,6 +253,28 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
 
   const enter = reduced ? undefined : FadeInDown.duration(240);
 
+  /**
+   * Which of the four nodes is live, and whether it is stuck there.
+   *
+   * Derived from the stage rather than tracked, because the stage is already
+   * the truth: a rail with its own state is a rail that disagrees with the
+   * screen it is describing the moment a request fails out of order.
+   */
+  const handing = order.stage === 'review' && order.addable.length > 0;
+  const step = recorder.recording
+    ? 0
+    : order.stage === 'transcribing'
+      ? 1
+      : order.stage === 'understanding'
+        ? 2
+        : handing
+          ? 3
+          : 2;
+  // Review with nothing to add is the end of the road for the AI path: the rail
+  // stops on Match rather than pretending to advance.
+  const stalled = order.stage === 'review' && order.addable.length === 0;
+  const onRail = order.stage !== 'sending' && order.stage !== 'sent';
+
   return (
     <Modal
       visible={visible}
@@ -285,6 +306,13 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
             </PressableScale>
           </View>
 
+          {/* Where we are in the pipeline, on every screen that is part of it.
+              It is the one thing that makes a four-second transcription read
+              as a stage rather than as a stall — and it stays put between
+              stages, so the sheet does not appear to rebuild itself each time
+              the wait changes its name. */}
+          {onRail ? <VoiceSteps at={step} failed={stalled} /> : null}
+
           {recorder.recording ? (
             <RecordingView
               levels={recorder.levels}
@@ -293,7 +321,7 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
               onDone={finish}
             />
           ) : order.stage === 'transcribing' || order.stage === 'understanding' ? (
-            <Working
+            <VoicePulse
               label={
                 order.stage === 'transcribing'
                   ? 'Listening to your order…'
@@ -301,12 +329,14 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
               }
             />
           ) : order.stage === 'sending' ? (
-            <Working label="Sending to HashmiMart…" />
+            <VoicePulse label="Sending to HashmiMart…" />
           ) : order.stage === 'sent' ? (
             <Sent reference={order.reference} onDone={close} />
           ) : (
             <Review
               order={order}
+              handing={handing}
+              onHandNow={confirmAll}
               onRetake={retake}
               onSend={sendOriginal}
               onSetQuantity={order.setQuantity}
@@ -370,15 +400,6 @@ function RecordingView({
   );
 }
 
-function Working({ label }: { label: string }) {
-  return (
-    <View style={[s.body, s.working]}>
-      <ActivityIndicator color={grocery.blue} />
-      <Text style={s.lead}>{label}</Text>
-    </View>
-  );
-}
-
 function Sent({
   reference,
   onDone,
@@ -415,23 +436,30 @@ function Sent({
 
 function Review({
   order,
+  handing,
+  onHandNow,
   onRetake,
   onSend,
   onSetQuantity,
   onMeasureRow,
 }: {
   order: ReturnType<typeof useVoiceOrder>;
+  /** True while the matched items are counting down to their flight. */
+  handing: boolean;
+  onHandNow: () => void;
   onRetake: () => void;
   onSend: () => void;
   onSetQuantity: (index: number, quantity: number) => void;
   onMeasureRow: (productId: string, frame: LayoutRectangle) => void;
 }) {
-  const reduced = useReducedMotion();
   return (
     <View style={s.body}>
       {order.transcript ? (
         <View style={s.heard}>
-          <Text style={s.heardLabel}>You said</Text>
+          <View style={s.heardHead}>
+            <Mic size={11} color={grocery.blue} strokeWidth={2.6} />
+            <Text style={s.heardLabel}>You said</Text>
+          </View>
           <Text style={s.heardText}>{order.transcript}</Text>
         </View>
       ) : null}
@@ -439,19 +467,20 @@ function Review({
       {order.addable.length === 0 ? <Trouble order={order} /> : null}
 
       {order.matches.length > 0 ? (
-        <ScrollView style={s.items} contentContainerStyle={s.itemsInner}>
+        <ScrollView
+          style={s.items}
+          contentContainerStyle={s.itemsInner}
+          showsVerticalScrollIndicator={false}
+        >
           {order.matches.map((match, index) => (
-            <Animated.View
+            <VoiceItemRow
               key={`${match.query}-${index}`}
-              entering={reduced ? undefined : FadeIn.delay(index * 70).duration(220)}
-              exiting={reduced ? undefined : FadeOut.duration(120)}
-            >
-              <ItemRow
-                match={match}
-                onSetQuantity={next => onSetQuantity(index, next)}
-                onMeasure={onMeasureRow}
-              />
-            </Animated.View>
+              match={match}
+              index={index}
+              launching={handing}
+              onSetQuantity={next => onSetQuantity(index, next)}
+              onMeasure={onMeasureRow}
+            />
           ))}
         </ScrollView>
       ) : null}
@@ -464,18 +493,12 @@ function Review({
           phone call back. When we know what was wanted, we get it; when we do
           not, the recording is still a complete order on its own. */}
       <View style={s.actions}>
-        {order.addable.length > 0 ? (
-          <View
-            accessibilityRole="progressbar"
-            accessibilityLabel={`Adding ${order.addable.length} items to your cart`}
-            style={s.handing}
-          >
-            <ActivityIndicator color={grocery.blue} size="small" />
-            <Text style={s.handingText}>
-              Adding {order.addable.length}{' '}
-              {order.addable.length === 1 ? 'item' : 'items'} to your cart…
-            </Text>
-          </View>
+        {handing ? (
+          <VoiceHandoff
+            count={order.addable.length}
+            durationMs={HANDOVER_DELAY_MS}
+            onSkip={onHandNow}
+          />
         ) : (
           <>
             {/* Saying it again is the repair that actually works, so it is the
@@ -567,91 +590,6 @@ function list(names: readonly string[]): string {
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-/**
- * One detected item.
- *
- * An item we could not match is shown rather than hidden, greyed and with a
- * warning — a silently dropped item is how an order arrives short, and the
- * customer is the only one who can tell us what they meant.
- */
-function ItemRow({
-  match,
-  onSetQuantity,
-  onMeasure,
-}: {
-  match: CatalogMatch;
-  onSetQuantity: (quantity: number) => void;
-  onMeasure: (productId: string, frame: LayoutRectangle) => void;
-}) {
-  const matched = Boolean(match.productId);
-  const unsure = match.confidence !== 'high';
-  const node = useRef<View>(null);
-
-  // Re-measured on every layout: the list reflows as quantities change, and
-  // rows above this one can disappear.
-  const measure = useCallback(() => {
-    const id = match.productId;
-    if (!id) return;
-    node.current?.measureInWindow((x, y, width, height) => {
-      if (width > 0 && height > 0) onMeasure(id, { x, y, width, height });
-    });
-  }, [match.productId, onMeasure]);
-
-  return (
-    <View
-      ref={node}
-      collapsable={false}
-      onLayout={measure}
-      style={[s.item, !matched && s.itemUnmatched]}
-    >
-      <View style={s.itemText}>
-        <Text style={[s.itemName, !matched && s.itemNameMuted]} numberOfLines={1}>
-          {match.productName ?? match.query}
-        </Text>
-        <Text style={s.itemMeta} numberOfLines={1}>
-          {matched
-            ? `${match.quantity}${match.unit ? ` ${match.unit}` : ''}${
-                unsure ? ' · please check' : ''
-              }`
-            : match.unstocked
-              ? `Out of stock — we don't sell ${match.unstocked} yet`
-              : "We couldn't make this one out"}
-        </Text>
-      </View>
-
-      {unsure ? (
-        <TriangleAlert size={15} color="#D8853F" strokeWidth={2.2} />
-      ) : null}
-
-      {matched ? (
-        <View style={s.stepper}>
-          <PressableScale
-            accessibilityRole="button"
-            accessibilityLabel={`Less ${match.productName}`}
-            onPress={() => onSetQuantity(Math.max(0, match.quantity - 1))}
-            scaleTo={0.9}
-            hitSlop={6}
-            style={s.step}
-          >
-            <Text style={s.stepText}>−</Text>
-          </PressableScale>
-          <Text style={s.stepQty}>{match.quantity}</Text>
-          <PressableScale
-            accessibilityRole="button"
-            accessibilityLabel={`More ${match.productName}`}
-            onPress={() => onSetQuantity(match.quantity + 1)}
-            scaleTo={0.9}
-            hitSlop={6}
-            style={s.step}
-          >
-            <Text style={s.stepText}>+</Text>
-          </PressableScale>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
 /** The size a product card sends, so both flights read as the same thing. */
 const FLIGHT_SIZE = 56;
 
@@ -659,10 +597,13 @@ const FLIGHT_SIZE = 56;
  * How long the matched items stay on screen before they fly.
  *
  * Long enough to read two or three of them and long enough for their rows to
- * lay out and report where they are; short enough that it reads as the app
- * getting on with it rather than as a screen waiting to be tapped.
+ * lay out and report where they are. It used to have to be short as well,
+ * because nothing on screen said it would end — so it had to be over before it
+ * could be mistaken for a hang. The bar under the items now draws itself down
+ * through it and a tap goes straight through, which buys the extra beat that
+ * makes an Urdu or Punjabi match actually checkable.
  */
-const HANDOVER_DELAY_MS = 900;
+const HANDOVER_DELAY_MS = 1000;
 
 const s = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#0B1F2A66' },
@@ -686,6 +627,10 @@ const s = StyleSheet.create({
   },
 
   body: { gap: 14, paddingTop: 14 },
+  items: { maxHeight: 258 },
+  // Room for the shadow the rows cast, and for the tilt they take before they
+  // fly; a tight container clips both.
+  itemsInner: { gap: 9, paddingVertical: 3, paddingHorizontal: 2 },
   working: { alignItems: 'center', paddingVertical: 26 },
   lead: {
     fontSize: 13.5,
@@ -708,9 +653,16 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#DCEFF8',
     padding: 12,
-    gap: 3,
+    gap: 5,
   },
-  heardLabel: { fontSize: 10.5, fontWeight: '700', color: grocery.muted },
+  heardHead: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  heardLabel: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    color: grocery.blue,
+  },
   heardText: {
     fontSize: 14,
     lineHeight: 20,
@@ -718,42 +670,6 @@ const s = StyleSheet.create({
     writingDirection: 'auto',
   },
 
-  items: { maxHeight: 260 },
-  itemsInner: { gap: 8 },
-  item: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#DCEFF8',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  itemUnmatched: { backgroundColor: '#F3F6F8', borderColor: '#E1E8EC' },
-  itemText: { flex: 1, gap: 2 },
-  itemName: { fontSize: 14, fontWeight: '700', color: grocery.ink },
-  itemNameMuted: { color: '#8B9BA6' },
-  itemMeta: { fontSize: 11.5, color: grocery.muted },
-
-  stepper: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  step: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#E7F4FA',
-  },
-  stepText: { fontSize: 15, fontWeight: '700', color: grocery.blue },
-  stepQty: {
-    minWidth: 16,
-    textAlign: 'center',
-    fontSize: 13,
-    fontWeight: '700',
-    color: grocery.ink,
-  },
 
   actions: { gap: 8 },
   trouble: {
@@ -781,16 +697,6 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#E3F2FA',
   },
-  handing: {
-    height: 52,
-    borderRadius: 26,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    backgroundColor: grocery.pale,
-  },
-  handingText: { fontSize: 14, fontWeight: '800', color: grocery.blue },
   row: { flexDirection: 'row', gap: 10 },
   primary: {
     flexDirection: 'row',

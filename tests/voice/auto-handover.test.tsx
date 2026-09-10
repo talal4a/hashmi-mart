@@ -80,15 +80,18 @@ describe('the voice sheet', () => {
       <VoiceOrderSheet visible onClose={jest.fn()} onConfirm={onConfirm} />,
     );
 
-    // Shown, not asked: there is no button to press here.
-    expect(view.queryByLabelText('Adding 2 items to your cart')).toBeTruthy();
+    // Shown, not asked. The wait is tappable — it draws itself down and a tap
+    // goes straight through — but nothing has to be pressed for the order to
+    // reach the cart.
+    const now = view.queryByLabelText('Add 2 items to your cart now');
+    expect(now).toBeTruthy();
     expect(onConfirm).not.toHaveBeenCalled();
     // And no competing offer to have the store call back instead: the items
     // are already on their way, so there is nothing to choose between.
     expect(view.queryByLabelText('Send voice order to the store')).toBeNull();
 
     await act(async () => {
-      jest.advanceTimersByTime(900);
+      jest.advanceTimersByTime(1000);
     });
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -103,6 +106,58 @@ describe('the voice sheet', () => {
       uri: 'file:///order.m4a',
       durationMs: 4200,
     });
+  });
+
+  it('says which stage it is on, all the way through', async () => {
+    // The waits are the whole experience of a voice order and they used to be
+    // a spinner with a changing caption — which is the same picture whether
+    // transcription is running or the request died four seconds ago. The rail
+    // is the thing that makes a slow stage legible as a stage.
+    mockOrder.stage = 'transcribing';
+    const first = await render(
+      <VoiceOrderSheet visible onClose={jest.fn()} onConfirm={jest.fn()} />,
+    );
+    expect(first.getByLabelText('Step 2 of 4')).toBeTruthy();
+    expect(first.getByText('Listening to your order…')).toBeTruthy();
+
+    mockOrder.stage = 'understanding';
+    const second = await render(
+      <VoiceOrderSheet visible onClose={jest.fn()} onConfirm={jest.fn()} />,
+    );
+    expect(second.getByLabelText('Step 3 of 4')).toBeTruthy();
+
+    mockOrder.stage = 'review';
+    mockOrder.matches = [matched('banana', 'Banana Premium')];
+    mockOrder.addable = mockOrder.matches;
+    const third = await render(
+      <VoiceOrderSheet visible onClose={jest.fn()} onConfirm={jest.fn()} />,
+    );
+    expect(third.getByLabelText('Step 4 of 4')).toBeTruthy();
+  });
+
+  it('goes straight through when the wait is tapped', async () => {
+    // The delay is there so the matches can be read. Someone who has read them
+    // should not have to sit through the rest of it — and before the bar was
+    // tappable, there was nothing they could do but wait.
+    const onConfirm = jest.fn();
+    mockOrder.matches = [matched('banana', 'Banana Premium')];
+    mockOrder.addable = mockOrder.matches;
+
+    const view = await render(
+      <VoiceOrderSheet visible onClose={jest.fn()} onConfirm={onConfirm} />,
+    );
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText('Add 1 item to your cart now'));
+    });
+
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+
+    // And the timer it pre-empted must not fire a second handover behind it.
+    await act(async () => {
+      jest.advanceTimersByTime(5000);
+    });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
   it('does not hand over an order it could not match', async () => {

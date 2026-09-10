@@ -22,12 +22,13 @@ import {
   Plus,
 } from 'lucide-react-native';
 import PressableScale from '../components/ui/PressableScale';
+import OrderSlip from '../components/checkout/OrderSlip';
 import ProduceArt from '../components/home/ProduceArt';
 import { grocery, HOME_GUTTER, softShadow } from '../components/home/groceryTheme';
 import VoiceNotePlayer, {
   type PlayerTone,
 } from '../components/voice/VoiceNotePlayer';
-import { useCart } from '../state/cart';
+import { useCart, type CartLine } from '../state/cart';
 import useProfileIdentity from '../hooks/useProfileIdentity';
 import { placeOrder } from '../services/orders';
 import { SupportError, supportErrorMessage } from '../services/supportService';
@@ -64,6 +65,18 @@ const PLAYER_TONE: PlayerTone = {
 
 type CheckoutRoute = RouteProp<RootStackParamList, 'Checkout'>;
 
+/** Everything the slip prints, captured before the cart is emptied. */
+type PlacedOrder = {
+  reference: string;
+  lines: CartLine[];
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  address: string;
+  phone: string;
+  name: string;
+};
+
 /** "eggs", "eggs and rice", "eggs, rice and salt". */
 function phrase(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? '';
@@ -80,7 +93,15 @@ export default function CheckoutScreen() {
   const { user, profile } = useProfileIdentity();
 
   const [placing, setPlacing] = useState(false);
-  const [placed, setPlaced] = useState<string | null>(null);
+  /**
+   * The placed order, kept whole rather than as a reference string.
+   *
+   * The cart is emptied the moment the write comes back, so by the time the
+   * confirmation renders there are no lines left to read — and the slip has to
+   * print what was actually bought. A snapshot taken before the clear is the
+   * only copy of it that still exists.
+   */
+  const [placed, setPlaced] = useState<PlacedOrder | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const source = route.params?.source ?? 'browse';
@@ -133,8 +154,18 @@ export default function CheckoutScreen() {
       });
       // Cleared only once the write came back. A cart emptied optimistically is
       // an order the customer has to reassemble from memory when it fails.
+      const slip: PlacedOrder = {
+        reference: order.reference,
+        lines,
+        subtotal,
+        deliveryFee,
+        total,
+        address,
+        phone,
+        name,
+      };
       clear();
-      setPlaced(order.reference);
+      setPlaced(slip);
     } catch (caught) {
       setError(
         supportErrorMessage(
@@ -163,7 +194,12 @@ export default function CheckoutScreen() {
 
   if (placed) {
     return (
-      <Confirmed reference={placed} onDone={goHome} insetTop={insets.top} />
+      <Confirmed
+        order={placed}
+        onDone={goHome}
+        insetTop={insets.top}
+        insetBottom={insets.bottom}
+      />
     );
   }
 
@@ -401,42 +437,84 @@ function Total({
   );
 }
 
+/**
+ * What you get for paying.
+ *
+ * This was a green tick, three lines of text and the reference in blue. All of
+ * it correct, none of it worth keeping — and a customer who wanted the code
+ * had to select it out of a sentence. An order placed in a shop ends with a
+ * docket, so this one does: the machine prints it, and it is yours once you
+ * tear it off.
+ *
+ * The tick is still here, above the printer, because the slip takes a moment
+ * to come out and the one thing nobody should have to wait for is the answer
+ * to "did that work".
+ */
 function Confirmed({
-  reference,
+  order,
   onDone,
   insetTop,
+  insetBottom,
 }: {
-  reference: string;
+  order: PlacedOrder;
   onDone: () => void;
   insetTop: number;
+  insetBottom: number;
 }) {
+  const reduced = useReducedMotion();
   return (
-    <View style={[s.screen, s.centre, { paddingTop: insetTop }]}>
-      <View style={s.tick}>
-        <Check size={26} color={grocery.white} strokeWidth={3} />
-      </View>
-      <Text style={s.title}>Order placed</Text>
-      <Text style={[s.muted, s.centreText]}>
-        HashmiMart is packing your order and will call to confirm delivery.
-      </Text>
-      <Text style={s.reference} selectable>
-        {reference}
-      </Text>
-      <PressableScale
-        accessibilityRole="button"
-        accessibilityLabel="Back to shopping"
-        onPress={onDone}
-        style={s.primary}
+    <View style={[s.screen, { paddingTop: insetTop + 10 }]}>
+      <StatusBar barStyle="dark-content" />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          s.confirmed,
+          { paddingBottom: insetBottom + 28 },
+        ]}
       >
-        <Text style={s.primaryText}>Back to shopping</Text>
-      </PressableScale>
+        <Animated.View
+          entering={reduced ? undefined : FadeInDown.duration(260)}
+          style={s.confirmedHead}
+        >
+          <View style={s.tick}>
+            <Check size={24} color={grocery.white} strokeWidth={3} />
+          </View>
+          <Text style={s.title}>Order placed</Text>
+          <Text style={[s.muted, s.centreText]}>
+            HashmiMart is packing your order and will call to confirm delivery.
+          </Text>
+        </Animated.View>
+
+        <OrderSlip
+          reference={order.reference}
+          lines={order.lines}
+          subtotal={order.subtotal}
+          deliveryFee={order.deliveryFee}
+          total={order.total}
+          address={order.address}
+          phone={order.phone}
+          name={order.name}
+        />
+
+        <PressableScale
+          accessibilityRole="button"
+          accessibilityLabel="Back to shopping"
+          onPress={onDone}
+          scaleTo={0.97}
+          style={[s.primary, s.confirmedDone]}
+        >
+          <Text style={s.primaryText}>Back to shopping</Text>
+        </PressableScale>
+      </ScrollView>
     </View>
   );
 }
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: grocery.canvas },
-  centre: { alignItems: 'center', justifyContent: 'center', gap: 12, padding: 28 },
+  confirmed: { alignItems: 'center', paddingHorizontal: HOME_GUTTER, gap: 22 },
+  confirmedHead: { alignItems: 'center', gap: 8, paddingBottom: 2 },
+  confirmedDone: { alignSelf: 'stretch', marginTop: 4 },
   centreText: { textAlign: 'center' },
   head: {
     flexDirection: 'row',
@@ -570,17 +648,11 @@ const s = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 28 },
   emptyTitle: { fontSize: 17, fontWeight: '800', color: grocery.ink },
   tick: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: grocery.green,
-  },
-  reference: {
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 1.5,
-    color: grocery.blue,
   },
 });

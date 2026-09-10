@@ -44,6 +44,15 @@ type CartValue = {
   adjust: (id: string, delta: number) => void;
   /** Voice and any other bulk path: set an absolute quantity. */
   add: (id: string, quantity: number) => void;
+  /**
+   * A whole order at once.
+   *
+   * Not a convenience. Calling `add` in a loop is one state update per item,
+   * and a voice order does it while three illustrations are in the air — so
+   * every landing re-rendered the screen the animation was playing on. One
+   * update for the batch is one render for the batch.
+   */
+  addMany: (items: readonly { id: string; quantity: number }[]) => void;
   clear: () => void;
 };
 
@@ -68,6 +77,20 @@ export function CartProvider({ children }: { children: ReactNode }) {
       [id]: Math.max(0, (previous[id] ?? 0) + quantity),
     }));
   }, []);
+
+  const addMany = useCallback(
+    (items: readonly { id: string; quantity: number }[]) => {
+      if (!items.length) return;
+      setQuantities(previous => {
+        const next = { ...previous };
+        for (const item of items) {
+          next[item.id] = Math.max(0, (next[item.id] ?? 0) + item.quantity);
+        }
+        return next;
+      });
+    },
+    [],
+  );
 
   const clear = useCallback(() => setQuantities({}), []);
 
@@ -95,9 +118,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
       subtotal: lines.reduce((sum, line) => sum + line.total, 0),
       adjust,
       add,
+      addMany,
       clear,
     };
-  }, [quantities, adjust, add, clear]);
+  }, [quantities, adjust, add, addMany, clear]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
@@ -111,4 +135,17 @@ export function useCart(): CartValue {
 /** The produce illustration for a product, for the flight that carries it. */
 export function artFor(productId: string): number | undefined {
   return CATALOG.get(productId)?.art;
+}
+
+/**
+ * The whole catalogue row for a product, or nothing.
+ *
+ * So a screen that only has an id — the voice sheet works from matches, not
+ * from products — can draw the thing rather than describe it. A confirmation
+ * list of names and numbers is the same list whether we understood "tamatar"
+ * or "kela"; the illustration is what lets someone check it at a glance, which
+ * is the entire job of that screen.
+ */
+export function productFor(productId: string) {
+  return CATALOG.get(productId);
 }

@@ -91,6 +91,55 @@ describe('cart flight', () => {
     await waitFor(() => expect(api!.arrivals.value).toBe(before + 1));
   });
 
+  it('acknowledges every item of a salvo, not just the first', async () => {
+    // A spoken order arrives as one batch. Before, the screen sent them with a
+    // chain of timers and counted each landing back through React; the whole
+    // batch now goes over in a single call and the cart still has to react
+    // once per item, or a three-item order looks like a one-item order.
+    let api: ReturnType<typeof useCartFlight> | null = null;
+    function Probe() {
+      api = useCartFlight();
+      return <View />;
+    }
+
+    await render(
+      <Harness>
+        <Probe />
+      </Harness>,
+    );
+
+    const before = api!.arrivals.value;
+    api!.flySalvo(
+      [
+        { x: 10, y: 300, size: 40, art: 0 },
+        { x: 10, y: 360, size: 40, art: 1 },
+        { x: 10, y: 420, size: 40, art: 2 },
+      ],
+      140,
+    );
+    await waitFor(() => expect(api!.arrivals.value).toBe(before + 3));
+  });
+
+  it('does nothing at all with an empty salvo', async () => {
+    // Voice orders where everything was out of stock hand over a list with
+    // nothing flyable in it. That is a cart which must not twitch.
+    let api: ReturnType<typeof useCartFlight> | null = null;
+    function Probe() {
+      api = useCartFlight();
+      return <View />;
+    }
+
+    await render(
+      <Harness>
+        <Probe />
+      </Harness>,
+    );
+
+    const before = api!.arrivals.value;
+    api!.flySalvo([], 140);
+    expect(api!.arrivals.value).toBe(before);
+  });
+
   it('hands back a no-op API outside the provider rather than throwing', () => {
     let api: ReturnType<typeof useCartFlight> | null = null;
     function Probe() {
@@ -99,6 +148,7 @@ describe('cart flight', () => {
     }
     render(<Probe />);
     expect(() => api?.fly({ x: 0, y: 0, size: 10, art: 0 })).not.toThrow();
+    expect(() => api?.flySalvo([{ x: 0, y: 0, size: 10, art: 0 }])).not.toThrow();
     expect(() => api?.setTarget(null)).not.toThrow();
   });
 });
