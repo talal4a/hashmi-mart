@@ -193,11 +193,44 @@ describe('the voice sheet', () => {
 
     // We understood perfectly. Telling this customer we did not catch them is
     // the worse of the two mistakes.
-    expect(view.queryByText('Out of stock right now')).toBeTruthy();
-    // Said in the headline and again on the row itself, so it is clear which
-    // of the items was the problem.
-    expect(view.queryAllByText(/don't sell eggs yet/).length).toBe(2);
-    expect(view.queryByText(/couldn't make/i)).toBeNull();
+    expect(view.queryByText("We don't stock that yet")).toBeTruthy();
+    expect(view.queryByText(/couldn't place/i)).toBeNull();
+
+    // And the thing we could not sell is named as the word it was heard as,
+    // once — it used to be said in a headline and again on a greyed row, so
+    // the same news arrived twice in two different shapes.
+    expect(view.queryAllByText('eggs')).toHaveLength(1);
+  });
+
+  it('offers the shelf instead of a sentence about not having it', async () => {
+    // "We don't sell eggs yet" is true and useless. What this customer needs
+    // is the thing we do sell, close enough to tap — which is also the only
+    // reply that can turn a dead end into an order.
+    const onConfirm = jest.fn();
+    mockOrder.matches = [
+      { query: 'anday', quantity: 1, confidence: 'low', unstocked: 'eggs' },
+    ];
+
+    const view = await render(
+      <VoiceOrderSheet visible onClose={jest.fn()} onConfirm={onConfirm} />,
+    );
+
+    const pick = view.getByLabelText('Add Tomato Organic to your cart');
+    await act(async () => {
+      fireEvent.press(pick);
+    });
+
+    // Handed over exactly as a spoken item is, so it flies into the cart and
+    // opens checkout rather than taking some quieter second path in.
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    const [items, order] = onConfirm.mock.calls[0];
+    expect(items).toEqual([
+      expect.objectContaining({ productId: 'tomato', quantity: 1 }),
+    ]);
+    // Nothing is out of stock or unclear any more: the customer has just told
+    // us what they wanted by pointing at it.
+    expect(order.outOfStock).toEqual([]);
+    expect(order.unclear).toEqual([]);
   });
 
   it('asks for the order again when it could not place the words', async () => {
@@ -209,8 +242,11 @@ describe('the voice sheet', () => {
       <VoiceOrderSheet visible onClose={jest.fn()} onConfirm={jest.fn()} />,
     );
 
-    expect(view.queryByText("We didn't catch that")).toBeTruthy();
-    expect(view.queryByText(/Say the item names on their own/)).toBeTruthy();
+    expect(view.queryByText("We couldn't place those words")).toBeTruthy();
+    // The word itself, rather than a sentence about it — it is shorter, more
+    // specific, and it lets the customer see at a glance whether we misheard
+    // them or simply do not sell it.
+    expect(view.queryByText('zzzqqq')).toBeTruthy();
   });
 
   it('says it heard nothing at all when the recording was silent', async () => {

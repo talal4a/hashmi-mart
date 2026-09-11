@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, type LayoutRectangle } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type LayoutRectangle,
+} from 'react-native';
 import Animated, {
   Easing,
   cancelAnimation,
@@ -16,11 +22,25 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { Check, Mic, ShoppingCart, Sparkles, TriangleAlert, Waves } from 'lucide-react-native';
+import {
+  Check,
+  CloudOff,
+  Mic,
+  MicOff,
+  PackageX,
+  Plus,
+  SearchX,
+  ShoppingCart,
+  Sparkles,
+  TriangleAlert,
+  Waves,
+} from 'lucide-react-native';
+import type { LucideIcon } from 'lucide-react-native';
 import PressableScale from '../ui/PressableScale';
 import ProduceArt from '../home/ProduceArt';
 import { grocery } from '../home/groceryTheme';
 import { productFor } from '../../state/cart';
+import { freshPicks } from '../../data/groceryHome';
 import type { CatalogMatch } from '../../services/voiceCatalog';
 
 /**
@@ -52,7 +72,7 @@ const WARN_BG = '#FFF4E4';
 
 export type VoiceStep = 'listening' | 'hearing' | 'matching' | 'cart';
 
-const STEPS: { key: VoiceStep; label: string; Icon: typeof Mic }[] = [
+const STEPS: { key: VoiceStep; label: string; Icon: LucideIcon }[] = [
   { key: 'listening', label: 'Listen', Icon: Mic },
   { key: 'hearing', label: 'Words', Icon: Waves },
   { key: 'matching', label: 'Match', Icon: Sparkles },
@@ -168,7 +188,7 @@ function StepNode({
    */
   at: number;
   label: string;
-  Icon: typeof Mic;
+  Icon: LucideIcon;
   progress: SharedValue<number>;
   pulse: SharedValue<number>;
   failed: boolean;
@@ -413,6 +433,263 @@ export function VoiceItemRow({
           </View>
         ) : null}
       </View>
+    </Animated.View>
+  );
+}
+
+
+/* ── When nothing reached the cart ─────────────────────────────────────── */
+
+/**
+ * Why the order came to nothing, and what to do about it.
+ *
+ * There are four reasons and they need different words, because they need
+ * different actions: silence and a misheard word are fixed by saying it again,
+ * an empty shelf is not fixed by anything the customer can do, and a backend
+ * that fell over is ours to apologise for.
+ *
+ * They used to be four paragraphs in an orange box, under the transcript,
+ * above a list of the same items greyed out — the same news told three times,
+ * once of them as prose. Nobody reads a paragraph at the end of a failed
+ * order; they look for the way out.
+ *
+ * So it is a state rather than a message. The words we could not use are the
+ * words, shown as they were heard and struck through; and under them is the
+ * shelf, tappable — which is the actual answer to "we don't sell that", and a
+ * good deal more use than a sentence saying so.
+ */
+export type TroubleKind = 'failed' | 'silent' | 'unstocked' | 'unmatched';
+
+const TROUBLE: Record<
+  TroubleKind,
+  { Icon: LucideIcon; tint: string; wash: string; title: string; hint: string }
+> = {
+  failed: {
+    Icon: CloudOff,
+    tint: '#D8853F',
+    wash: WARN_BG,
+    title: 'That did not go through',
+    hint: 'Nothing to do with what you said — try again in a moment.',
+  },
+  silent: {
+    Icon: MicOff,
+    tint: '#D8853F',
+    wash: WARN_BG,
+    title: "We couldn't hear anything",
+    hint: 'Hold the phone closer and say it again.',
+  },
+  unstocked: {
+    Icon: PackageX,
+    tint: grocery.blue,
+    wash: grocery.pale,
+    title: "We don't stock that yet",
+    hint: 'Here is what is on the shelf today.',
+  },
+  unmatched: {
+    Icon: SearchX,
+    tint: grocery.blue,
+    wash: grocery.pale,
+    title: "We couldn't place those words",
+    hint: 'Say the item names on their own — or pick one below.',
+  },
+};
+
+export function VoiceTrouble({
+  kind,
+  detail,
+  words,
+  onPick,
+  onMeasure,
+}: {
+  kind: TroubleKind;
+  /** The backend's own words, when it has any. Replaces the stock hint. */
+  detail?: string | null;
+  /** What was heard and could not be used, in the customer's own words. */
+  words: readonly string[];
+  /** Adds one of the shelf, exactly as a matched item would be added. */
+  onPick: (productId: string) => void;
+  onMeasure: (productId: string, frame: LayoutRectangle) => void;
+}) {
+  const reduced = useReducedMotion();
+  const face = TROUBLE[kind];
+  const enter = useSharedValue(0);
+  const ring = useSharedValue(0);
+
+  useEffect(() => {
+    enter.value = reduced
+      ? 1
+      : withSpring(1, { damping: 16, stiffness: 170, mass: 0.7 });
+  }, [enter, reduced]);
+
+  useEffect(() => {
+    cancelAnimation(ring);
+    if (reduced) {
+      ring.value = 0;
+      return;
+    }
+    // One slow sonar ring. The state is a dead end and should look calm; a
+    // spinner here would say we were still trying.
+    ring.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 1500, easing: Easing.out(Easing.quad) }),
+        withTiming(0, { duration: 0 }),
+        withDelay(500, withTiming(0, { duration: 0 })),
+      ),
+      -1,
+      false,
+    );
+    return () => cancelAnimation(ring);
+  }, [reduced, ring]);
+
+  const shell = useAnimatedStyle(() => ({
+    opacity: enter.value,
+    transform: [{ translateY: (1 - enter.value) * 12 }],
+  }));
+
+  const disc = useAnimatedStyle(() => ({
+    transform: [{ scale: 0.7 + 0.3 * enter.value }],
+  }));
+
+  const sonar = useAnimatedStyle(() => ({
+    opacity: 0.32 * (1 - ring.value),
+    transform: [{ scale: 1 + 0.9 * ring.value }],
+  }));
+
+  // Whatever we could not use, minus the shelf we are about to offer: an item
+  // shown as unavailable and then again as available is the one thing this
+  // screen must not do.
+  const offered = freshPicks.filter(
+    item =>
+      !words.some(word => word.toLowerCase() === item.name.toLowerCase()),
+  );
+  const shoppable = kind === 'unstocked' || kind === 'unmatched';
+
+  return (
+    <Animated.View style={[s.trouble, { backgroundColor: face.wash }, shell]}>
+      <View style={s.troubleHead}>
+        <View style={s.troubleDisc}>
+          <Animated.View
+            pointerEvents="none"
+            style={[s.sonar, { borderColor: face.tint }, sonar]}
+          />
+          <Animated.View
+            style={[s.discFace, { backgroundColor: face.tint }, disc]}
+          >
+            <face.Icon size={19} color={grocery.white} strokeWidth={2.3} />
+          </Animated.View>
+        </View>
+        <View style={s.troubleText}>
+          <Text style={s.troubleTitle}>{face.title}</Text>
+          <Text style={s.troubleHint}>{detail ?? face.hint}</Text>
+        </View>
+      </View>
+
+      {/* The words themselves, struck through. A list of what we could not use
+          is shorter, more specific and more convincing than a sentence about
+          it — and it lets the customer see immediately whether we misheard
+          them or simply do not sell it. */}
+      {words.length ? (
+        <View style={s.wordRow}>
+          {words.map((word, index) => (
+            <View key={`${word}-${index}`} style={s.word}>
+              <Text style={s.wordText} numberOfLines={1}>
+                {word}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {shoppable && offered.length ? (
+        <View style={s.shelf}>
+          <Text style={s.shelfLabel}>On the shelf today</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.shelfRow}
+          >
+            {offered.map((item, index) => (
+              <ShelfChip
+                key={item.id}
+                item={item}
+                index={index}
+                onPick={onPick}
+                onMeasure={onMeasure}
+              />
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+    </Animated.View>
+  );
+}
+
+/**
+ * One thing we do sell, added with a tap.
+ *
+ * It measures itself for the same reason a matched row does: picking one sends
+ * it to the cart through exactly the path a spoken item takes, so it has to be
+ * able to say where on screen it was before the sheet closes over it.
+ */
+function ShelfChip({
+  item,
+  index,
+  onPick,
+  onMeasure,
+}: {
+  item: (typeof freshPicks)[number];
+  index: number;
+  onPick: (productId: string) => void;
+  onMeasure: (productId: string, frame: LayoutRectangle) => void;
+}) {
+  const reduced = useReducedMotion();
+  const node = useRef<View>(null);
+  const enter = useSharedValue(0);
+
+  useEffect(() => {
+    enter.value = reduced
+      ? 1
+      : withDelay(
+          120 + index * 60,
+          withSpring(1, { damping: 15, stiffness: 200, mass: 0.6 }),
+        );
+  }, [enter, index, reduced]);
+
+  const measure = useCallback(() => {
+    node.current?.measureInWindow((x, y, width, height) => {
+      if (width > 0 && height > 0) onMeasure(item.id, { x, y, width, height });
+    });
+  }, [item.id, onMeasure]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: enter.value,
+    transform: [
+      { translateY: (1 - enter.value) * 10 },
+      { scale: 0.92 + 0.08 * enter.value },
+    ],
+  }));
+
+  return (
+    <Animated.View style={style}>
+      <PressableScale
+        accessibilityRole="button"
+        accessibilityLabel={`Add ${item.name} to your cart`}
+        onPress={() => onPick(item.id)}
+        scaleTo={0.94}
+      >
+        <View ref={node} collapsable={false} onLayout={measure} style={s.chip}>
+          <View style={s.chipArt}>
+            <ProduceArt index={item.art} size={64} radius={14} />
+            <View style={s.chipAdd}>
+              <Plus size={12} color={grocery.white} strokeWidth={3} />
+            </View>
+          </View>
+          <Text style={s.chipName} numberOfLines={1}>
+            {item.name.split(' ')[0]}
+          </Text>
+          <Text style={s.chipPrice}>Rs. {item.price}</Text>
+        </View>
+      </PressableScale>
     </Animated.View>
   );
 }
@@ -672,6 +949,91 @@ const s = StyleSheet.create({
     color: grocery.ink,
     fontVariant: ['tabular-nums'],
   },
+
+  /* nothing matched */
+  trouble: { borderRadius: 20, padding: 14, gap: 13 },
+  troubleHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  troubleDisc: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sonar: {
+    position: 'absolute',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1.5,
+  },
+  discFace: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  troubleText: { flex: 1, gap: 3 },
+  troubleTitle: { fontSize: 15, fontWeight: '800', color: grocery.ink },
+  troubleHint: { fontSize: 12.5, lineHeight: 17.5, color: grocery.muted },
+
+  // The heard words, struck through. Wrapped rather than scrolled: there are
+  // rarely more than three and a row that scrolls hides the third one.
+  wordRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  word: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2EAEF',
+  },
+  wordText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#94A5B1',
+    textDecorationLine: 'line-through',
+    writingDirection: 'auto',
+  },
+
+  shelf: { gap: 8 },
+  shelfLabel: {
+    fontSize: 9.5,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    color: grocery.muted,
+  },
+  // Padded so the chips' shadows and their press dip are not clipped by the
+  // scroller.
+  shelfRow: { gap: 9, paddingRight: 4, paddingVertical: 2 },
+  chip: {
+    width: 76,
+    alignItems: 'center',
+    gap: 3,
+    paddingBottom: 2,
+  },
+  chipArt: { borderRadius: 14 },
+  chipAdd: {
+    position: 'absolute',
+    right: -3,
+    bottom: -3,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: grocery.blue,
+    borderWidth: 2,
+    borderColor: grocery.white,
+  },
+  chipName: {
+    marginTop: 4,
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: grocery.ink,
+  },
+  chipPrice: { fontSize: 10.5, fontWeight: '700', color: grocery.muted },
 
   /* handoff */
   handoff: {

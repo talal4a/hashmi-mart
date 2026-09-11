@@ -10,7 +10,7 @@ import {
 import type { LayoutRectangle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown, useReducedMotion } from 'react-native-reanimated';
-import { Check, Mic, TriangleAlert, X } from 'lucide-react-native';
+import { Check, Mic, X } from 'lucide-react-native';
 import PressableScale from '../ui/PressableScale';
 import { grocery } from '../home/groceryTheme';
 import useVoiceRecorder, { formatDuration } from '../../hooks/useVoiceRecorder';
@@ -22,6 +22,8 @@ import {
   VoiceItemRow,
   VoicePulse,
   VoiceSteps,
+  VoiceTrouble,
+  type TroubleKind,
 } from './VoiceReview';
 import { tapHandoff, tapRecordStart, tapSend } from './haptics';
 
@@ -219,6 +221,49 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
   }, [order, recorder, onConfirm, cancelHandover]);
 
   /**
+   * Adds one thing we do sell, when nothing that was said matched.
+   *
+   * Goes out through the same handover as a spoken order rather than round
+   * some second path into the cart: the chip measures itself, so the item
+   * flies from where it was tapped and checkout opens behind it exactly as it
+   * would have if we had understood the sentence. A dead end that quietly
+   * behaves differently from the happy path is a second thing to maintain and
+   * a second thing to get wrong.
+   */
+  const confirmPicked = useCallback(
+    (productId: string) => {
+      cancelHandover();
+      tapHandoff();
+      const frame = rows.current.get(productId);
+      const transcript = order.transcript || null;
+      const recording = order.recording
+        ? { uri: order.recording.uri, durationMs: order.recording.durationMs }
+        : null;
+      void recorder.cancel();
+      order.reset();
+      onConfirm(
+        [
+          {
+            productId,
+            quantity: 1,
+            origin: frame
+              ? {
+                  size: FLIGHT_SIZE,
+                  x: frame.x + frame.width / 2 - FLIGHT_SIZE / 2,
+                  y: frame.y + frame.height / 2 - FLIGHT_SIZE / 2,
+                }
+              : undefined,
+          },
+        ],
+        // Nothing was out of stock or unclear from the app's point of view:
+        // the customer has just told us what they wanted by pointing at it.
+        { transcript, outOfStock: [], unclear: [], recording },
+      );
+    },
+    [cancelHandover, order, recorder, onConfirm],
+  );
+
+  /**
    * Found items go to the cart on their own.
    *
    * There used to be a Confirm button here, and a customer who had already
@@ -337,6 +382,7 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
               order={order}
               handing={handing}
               onHandNow={confirmAll}
+              onPick={confirmPicked}
               onRetake={retake}
               onSend={sendOriginal}
               onSetQuantity={order.setQuantity}
@@ -438,6 +484,7 @@ function Review({
   order,
   handing,
   onHandNow,
+  onPick,
   onRetake,
   onSend,
   onSetQuantity,
@@ -447,11 +494,13 @@ function Review({
   /** True while the matched items are counting down to their flight. */
   handing: boolean;
   onHandNow: () => void;
+  onPick: (productId: string) => void;
   onRetake: () => void;
   onSend: () => void;
   onSetQuantity: (index: number, quantity: number) => void;
   onMeasureRow: (productId: string, frame: LayoutRectangle) => void;
 }) {
+  const nothing = order.addable.length === 0;
   return (
     <View style={s.body}>
       {order.transcript ? (
@@ -464,9 +513,14 @@ function Review({
         </View>
       ) : null}
 
-      {order.addable.length === 0 ? <Trouble order={order} /> : null}
+      {nothing ? (
+        <Trouble order={order} onPick={onPick} onMeasure={onMeasureRow} />
+      ) : null}
 
-      {order.matches.length > 0 ? (
+      {/* The rows are the matched order. With nothing matched they were a list
+          of the same words the state above already shows struck through — the
+          same news twice, and the second telling in the shape of a cart. */}
+      {!nothing && order.matches.length > 0 ? (
         <ScrollView
           style={s.items}
           contentContainerStyle={s.itemsInner}
@@ -530,15 +584,26 @@ function Review({
 }
 
 /**
- * Why nothing reached the cart, in the customer's terms.
+ * Which dead end this is, and what the customer actually said.
  *
- * There are four different reasons and they used to share one line of text.
- * They need different words because they need different actions: silence and a
- * misheard word are fixed by saying it again, an empty shelf is not fixed by
- * anything the customer can do, and a backend that fell over is ours to
- * apologise for.
+ * The four reasons are told apart here rather than in the state below, because
+ * only this file knows the shape of a match: `VoiceTrouble` is handed a kind
+ * and a list of words and has no opinion about where either came from.
+ *
+ * The distinctions matter because they imply different repairs. Silence and a
+ * misheard word are fixed by saying it again. An empty shelf is fixed by
+ * nothing the customer can do — so that is the case that offers the shelf.
+ * And a backend that fell over is ours to apologise for, in its own words.
  */
-function Trouble({ order }: { order: ReturnType<typeof useVoiceOrder> }) {
+function Trouble({
+  order,
+  onPick,
+  onMeasure,
+}: {
+  order: ReturnType<typeof useVoiceOrder>;
+  onPick: (productId: string) => void;
+  onMeasure: (productId: string, frame: LayoutRectangle) => void;
+}) {
   const unmatched = order.matches.filter(match => !match.productId);
   const outOfStock = [
     ...new Set(
@@ -547,47 +612,33 @@ function Trouble({ order }: { order: ReturnType<typeof useVoiceOrder> }) {
         .filter((name): name is string => Boolean(name)),
     ),
   ];
-  const everythingIsStock = unmatched.length > 0 && outOfStock.length === unmatched.length;
 
-  let title: string;
-  let detail: string;
+  let kind: TroubleKind;
+  if (order.error) kind = 'failed';
+  else if (!order.transcript) kind = 'silent';
+  // Everything we heard was a real thing we simply do not sell. Telling this
+  // customer we did not catch them is the worse of the two mistakes: we caught
+  // them perfectly.
+  else if (outOfStock.length > 0 && outOfStock.length === unmatched.length)
+    kind = 'unstocked';
+  else kind = 'unmatched';
 
-  if (order.error) {
-    title = 'That did not go through';
-    detail = order.error;
-  } else if (!order.transcript) {
-    title = "We couldn't hear anything";
-    detail =
-      'Hold the phone a little closer and say your order again — for example, "do kilo tamatar aur teen kele".';
-  } else if (everythingIsStock) {
-    title = `Out of stock right now`;
-    detail = `We don't sell ${list(outOfStock)} yet, so there was nothing to add. Say another order, or send your recording and the store will call you.`;
-  } else if (outOfStock.length > 0) {
-    title = 'We could not add any of that';
-    detail = `We don't sell ${list(outOfStock)} yet, and the rest did not match anything we stock. Try saying the item names on their own.`;
-  } else {
-    title = "We didn't catch that";
-    detail =
-      'Nothing in that matched what we sell. Say the item names on their own — like "tamatar", "kela", "palak" — and we will find them.';
-  }
+  // What was heard and could not be used, in the customer's own words. The
+  // out-of-stock names first, because those are the ones we understood.
+  const words = [
+    ...outOfStock,
+    ...unmatched.filter(match => !match.unstocked).map(match => match.query),
+  ];
 
   return (
-    <View style={s.trouble}>
-      <View style={s.troubleIcon}>
-        <TriangleAlert size={16} color="#D8853F" strokeWidth={2.3} />
-      </View>
-      <View style={s.troubleText}>
-        <Text style={s.troubleTitle}>{title}</Text>
-        <Text style={s.troubleDetail}>{detail}</Text>
-      </View>
-    </View>
+    <VoiceTrouble
+      kind={kind}
+      detail={order.error}
+      words={words}
+      onPick={onPick}
+      onMeasure={onMeasure}
+    />
   );
-}
-
-/** "eggs", "eggs and rice", "eggs, rice and salt". */
-function list(names: readonly string[]): string {
-  if (names.length <= 1) return names[0] ?? '';
-  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 /** The size a product card sends, so both flights read as the same thing. */
@@ -672,24 +723,6 @@ const s = StyleSheet.create({
 
 
   actions: { gap: 8 },
-  trouble: {
-    flexDirection: 'row',
-    gap: 10,
-    padding: 13,
-    borderRadius: 18,
-    backgroundColor: '#FFF4E4',
-  },
-  troubleIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFE7C7',
-  },
-  troubleText: { flex: 1, gap: 3 },
-  troubleTitle: { fontSize: 14.5, fontWeight: '800', color: grocery.ink },
-  troubleDetail: { fontSize: 12.5, lineHeight: 18, color: '#6B5844' },
   ghostWide: {
     height: 46,
     borderRadius: 23,
