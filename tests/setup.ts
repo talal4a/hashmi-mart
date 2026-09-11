@@ -9,6 +9,12 @@ jest.mock('@react-native-google-signin/google-signin', () => require('./support/
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock'));
 
 beforeEach(() => {
+  // The voice pipeline prints a diagnostic block per order in development,
+  // which is a feature on a phone and noise in a test run. Re-applied each
+  // test rather than once, because `restoreAllMocks` below would otherwise
+  // undo it after the first one. Muted here rather than switched off in the
+  // source, so the tests still exercise the code that logs.
+  jest.spyOn(console, 'log').mockImplementation(() => {});
   jest.useFakeTimers();
   resetFirebase();
   forgetUserDocument();

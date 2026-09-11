@@ -19,6 +19,7 @@ import {
   type MatchConfidence,
 } from '../services/voiceCatalog';
 import { parseOrder, transcribeOrder } from '../services/voiceOrder';
+import { reportVoiceOrder } from '../services/voiceDiagnostics';
 import type { Recording } from '../hooks/useVoiceRecorder';
 
 /**
@@ -164,16 +165,40 @@ export function VoiceOrderProvider({ children }: { children: ReactNode }) {
     async (id: number, recording: Recording) => {
       setState({ ...EMPTY, stage: 'finalizing' });
 
+      // Gathered as the run goes, so a failure halfway still reports what it
+      // got that far with — which is usually the half that explains it.
+      let bytes = 0;
+      let usedModel = false;
+      const say = (
+        outcome: string,
+        transcript = '',
+        matches: CatalogMatch[] = [],
+        unresolved: string[] = [],
+      ) =>
+        reportVoiceOrder({
+          attempt: id,
+          durationMs: recording.durationMs,
+          bytes,
+          transcript,
+          usedModel,
+          matches,
+          unresolved,
+          outcome,
+        });
+
       // Validated by what is on disk, not by how long the button was held. A
       // fast order is a short file, and a duration floor is what makes "bread
       // aik" indistinguishable from a mis-tap.
       try {
         const file = new File(recording.uri);
-        if (!file.exists || (file.size ?? 0) < MIN_AUDIO_BYTES) {
+        bytes = file.size ?? 0;
+        if (!file.exists || bytes < MIN_AUDIO_BYTES) {
+          say('nothing in the recording');
           if (!stale(id)) setState({ ...EMPTY, stage: 'empty' });
           return;
         }
       } catch {
+        say('recording file unreadable');
         if (!stale(id)) setState({ ...EMPTY, stage: 'empty' });
         return;
       }
@@ -187,6 +212,7 @@ export function VoiceOrderProvider({ children }: { children: ReactNode }) {
       } catch (caught) {
         if (stale(id)) return;
         const kind = caught instanceof SupportError ? caught.kind : 'unavailable';
+        say(`transcription failed (${kind})`);
         // The recording is kept. Try again re-sends it rather than asking the
         // customer to say the whole thing over because our upstream blinked.
         setState({ ...EMPTY, stage: 'error', error: supportErrorMessage(kind) });
@@ -195,6 +221,7 @@ export function VoiceOrderProvider({ children }: { children: ReactNode }) {
 
       if (stale(id)) return;
       if (!transcript) {
+        say('transcript came back empty');
         setState({ ...EMPTY, stage: 'empty' });
         return;
       }
@@ -205,6 +232,7 @@ export function VoiceOrderProvider({ children }: { children: ReactNode }) {
 
       if (isConfidentlyUnderstood(transcript, local)) {
         if (stale(id)) return;
+        say('read locally, no model needed', transcript, local, []);
         settle(id, transcript, local);
         return;
       }
@@ -214,19 +242,25 @@ export function VoiceOrderProvider({ children }: { children: ReactNode }) {
       if (stale(id)) return;
       setState(current => ({ ...current, stage: 'understanding', transcript }));
 
+      usedModel = true;
       try {
         const parsed = await parseOrder(transcript);
         if (stale(id)) return;
-        settle(id, transcript, readOrder(transcript, parsed.items));
+        const merged = readOrder(transcript, parsed.items);
+        say('read with the model', transcript, merged, unresolvedFragments(transcript, merged));
+        settle(id, transcript, merged);
       } catch (caught) {
         if (stale(id)) return;
         // A dead parse is not a dead order. The words are already here and the
         // catalogue has read them; the local pass stands on its own.
         const kind = caught instanceof SupportError ? caught.kind : 'unavailable';
         if (local.length) {
+          say(`model failed (${kind}), local read stands`, transcript, local,
+            unresolvedFragments(transcript, local));
           settle(id, transcript, local);
           return;
         }
+        say(`model failed (${kind}) and nothing matched locally`, transcript);
         setState({
           ...EMPTY,
           stage: 'empty',
