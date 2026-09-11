@@ -1,37 +1,10 @@
 import { freshPicks } from '../data/groceryHome';
-
-/**
- * Turning what someone said into something HashmiMart actually sells.
- *
- * This is the correctness layer, and it exists because the model above it is
- * not one. An LLM asked to normalise a shopping list will produce something
- * plausible for a word it did not understand, and a plausible wrong item is
- * worse than a missing one: the customer confirms a list that looks right and
- * receives something else. So nothing reaches the confirmation sheet unless it
- * matched a real catalogue entry, and anything that matched weakly is marked
- * rather than quietly accepted.
- *
- * Matching is deliberately conservative and explainable — exact, then alias,
- * then prefix, then a bounded edit distance. No embeddings, no scoring model.
- * When a grocery order goes wrong the question is always "why did it pick
- * that", and every answer here is one line long.
- */
-
 export type CatalogEntry = {
   id: string;
   name: string;
   /** Everything a customer might call it, across the languages they use. */
   aliases: readonly string[];
 };
-
-/**
- * Aliases carry the languages, not the matcher.
- *
- * The alternative is transliteration rules, and they do not survive contact
- * with real speech: "anday", "ande" and "aanday" are the same word written by
- * three people, and no rule set produces all three from "eggs". A list is
- * dull and it is right.
- */
 const ALIASES: Record<string, readonly string[]> = {
   // Stocked today. Urdu script first, because that is what Whisper actually
   // returns for Urdu speech.
