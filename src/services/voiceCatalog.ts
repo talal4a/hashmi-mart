@@ -37,50 +37,58 @@ const ALIASES: Record<string, readonly string[]> = {
   // returns for Urdu speech.
   tomato: [
     'ٹماٹر', 'تماتر',
+    // Devanagari first among the Indic spellings: Whisper reaches for Hindi
+    // when it is handed Punjabi, so this is what a Punjabi order most often
+    // comes back as.
+    'टमाटर', 'ਟਮਾਟਰ',
     'tamatar', 'tamater', 'tamatr', 'tamaatar', 'timatar',
     'tomato', 'tomatoes',
   ],
   banana: [
     'کیلا', 'کیلے', 'کیلہ',
+    'केला', 'केले', 'ਕੇਲਾ', 'ਕੇਲੇ',
     'kela', 'kele', 'kaila', 'kaile', 'keela',
     'banana', 'bananas',
   ],
   spinach: [
     'پالک', 'ساگ',
+    'पालक', 'साग', 'ਪਾਲਕ', 'ਸਾਗ',
     'palak', 'paalak', 'saag', 'sag',
     'spinach', 'greens',
   ],
   apple: [
     'سیب', 'سیو',
+    'सेब', 'ਸੇਬ',
     'seb', 'saib', 'sev', 'seo',
     'apple', 'apples',
   ],
   cucumber: [
     'کھیرا', 'کھیرے', 'ککڑی',
     'kheera', 'khira', 'kheere', 'khera', 'kakri', 'kakdi',
+    'खीरा', 'खीरे', 'ककड़ी', 'ਖੀਰਾ', 'ਖੀਰੇ', 'ਕਕੜੀ',
     'cucumber', 'cucumbers',
   ],
 
   // Not stocked yet. Carried so that adding one to freshPicks is a one-line
   // change rather than a translation exercise — CATALOG only ever exposes what
   // is actually on the shelf.
-  potato: ['آلو', 'aloo', 'alu', 'aalu', 'potato', 'potatoes'],
-  onion: ['پیاز', 'pyaz', 'piyaz', 'pyaaz', 'pyaj', 'onion', 'onions'],
-  milk: ['دودھ', 'doodh', 'dudh', 'dodh', 'dood', 'milk'],
-  eggs: ['انڈے', 'انڈا', 'انڈوں', 'anday', 'ande', 'aanday', 'anda', 'egg', 'eggs'],
-  bread: ['روٹی', 'ڈبل روٹی', 'بریڈ', 'bread', 'double roti', 'dabal roti', 'roti'],
-  rice: ['چاول', 'chawal', 'chaval', 'chawel', 'rice'],
-  flour: ['آٹا', 'aata', 'atta', 'ata', 'flour'],
-  sugar: ['چینی', 'cheeni', 'chini', 'chinni', 'sugar'],
-  tea: ['چائے', 'پتی', 'chai', 'chaye', 'chae', 'patti', 'tea'],
-  oil: ['تیل', 'گھی', 'tel', 'ghee', 'gheo', 'oil', 'cooking oil'],
-  yoghurt: ['دہی', 'dahi', 'dahee', 'yoghurt', 'yogurt', 'curd'],
-  orange: ['سنترہ', 'مالٹا', 'santra', 'santara', 'malta', 'orange', 'oranges'],
-  chicken: ['مرغی', 'گوشت', 'murghi', 'murgi', 'murghee', 'gosht', 'chicken'],
-  lentils: ['دال', 'چنا', 'dal', 'daal', 'chana', 'lentil', 'lentils'],
-  salt: ['نمک', 'namak', 'salt'],
-  garlic: ['لہسن', 'lehsan', 'lasan', 'lehsun', 'garlic'],
-  ginger: ['ادرک', 'adrak', 'adrakh', 'ginger'],
+  potato: ['آلو', 'आलू', 'ਆਲੂ', 'aloo', 'alu', 'aalu', 'potato', 'potatoes'],
+  onion: ['پیاز', 'प्याज', 'ਪਿਆਜ', 'pyaz', 'piyaz', 'pyaaz', 'pyaj', 'onion', 'onions'],
+  milk: ['دودھ', 'दूध', 'ਦੁੱਧ', 'doodh', 'dudh', 'dodh', 'dood', 'milk'],
+  eggs: ['انڈے', 'انڈا', 'انڈوں', 'अंडे', 'अंडा', 'ਆਂਡੇ', 'ਅੰਡੇ', 'anday', 'ande', 'aanday', 'anda', 'egg', 'eggs'],
+  bread: ['روٹی', 'ڈبل روٹی', 'بریڈ', 'ब्रेड', 'रोटी', 'ਬਰੈਡ', 'ਰੋਟੀ', 'bread', 'double roti', 'dabal roti', 'roti'],
+  rice: ['چاول', 'चावल', 'ਚੌਲ', 'chawal', 'chaval', 'chawel', 'rice'],
+  flour: ['آٹا', 'आटा', 'ਆਟਾ', 'aata', 'atta', 'ata', 'flour'],
+  sugar: ['چینی', 'चीनी', 'ਖੰਡ', 'ਚੀਨੀ', 'cheeni', 'chini', 'chinni', 'khand', 'sugar'],
+  tea: ['چائے', 'پتی', 'चाय', 'पत्ती', 'ਚਾਹ', 'chai', 'chaye', 'chae', 'patti', 'tea'],
+  oil: ['تیل', 'گھی', 'तेल', 'घी', 'ਤੇਲ', 'ਘਿਓ', 'tel', 'ghee', 'gheo', 'oil', 'cooking oil'],
+  yoghurt: ['دہی', 'दही', 'ਦਹੀ', 'dahi', 'dahee', 'yoghurt', 'yogurt', 'curd'],
+  orange: ['سنترہ', 'مالٹا', 'संतरा', 'ਸੰਤਰਾ', 'santra', 'santara', 'malta', 'orange', 'oranges'],
+  chicken: ['مرغی', 'گوشت', 'मुर्गी', 'गोश्त', 'ਮੁਰਗੀ', 'ਗੋਸ਼ਤ', 'murghi', 'murgi', 'murghee', 'gosht', 'chicken'],
+  lentils: ['دال', 'چنا', 'दाल', 'चना', 'ਦਾਲ', 'ਛੋਲੇ', 'dal', 'daal', 'chana', 'lentil', 'lentils'],
+  salt: ['نمک', 'नमक', 'ਲੂਣ', 'ਨਮਕ', 'namak', 'loon', 'salt'],
+  garlic: ['لہسن', 'लहसुन', 'ਲਸਣ', 'lehsan', 'lasan', 'lehsun', 'garlic'],
+  ginger: ['ادرک', 'अदरक', 'ਅਦਰਕ', 'adrak', 'adrakh', 'ginger'],
 };
 
 /** What to call a product we know the word for but do not sell. */
@@ -149,6 +157,15 @@ const UNSTOCKED: readonly CatalogEntry[] = (() => {
     }));
 })();
 
+/**
+ * Every catalogue alias, keyed by how it sounds.
+ *
+ * Built once, and deliberately refusing collisions: if two products ever claim
+ * the same skeleton the entry is dropped rather than assigned to whichever was
+ * defined first. A sound that could be either of two groceries is not a match,
+ * it is a coin toss — and the whole point of this layer is that a plausible
+ * wrong item is worse than a missing one.
+ */
 /** How sure we are, and therefore how the sheet should treat it. */
 export type MatchConfidence = 'high' | 'medium' | 'low';
 
@@ -207,6 +224,34 @@ const NUMBERS: Record<string, number> = {
   'نو': 9,
   'دس': 10,
   'درجن': 12,
+
+  // Devanagari, because Whisper labels Punjabi as Hindi far more often than it
+  // labels it Punjabi — so this is the script a Punjabi order usually comes
+  // back in, and without these it carries no quantity at all.
+  'एक': 1,
+  'दो': 2,
+  'तीन': 3,
+  'चार': 4,
+  'पांच': 5, 'पाँच': 5,
+  'छह': 6, 'छे': 6, 'छः': 6,
+  'सात': 7,
+  'आठ': 8,
+  'नौ': 9,
+  'दस': 10,
+  'दर्जन': 12,
+
+  // Gurmukhi, for the decodes that do come back as Punjabi.
+  'ਇਕ': 1, 'ਇੱਕ': 1,
+  'ਦੋ': 2,
+  'ਤਿੰਨ': 3,
+  'ਚਾਰ': 4,
+  'ਪੰਜ': 5,
+  'ਛੇ': 6,
+  'ਸੱਤ': 7, 'ਸਤ': 7,
+  'ਅੱਠ': 8, 'ਅਠ': 8,
+  'ਨੌ': 9, 'ਨੌਂ': 9,
+  'ਦਸ': 10,
+  'ਦਰਜਨ': 12,
 };
 
 /** Words that carry a quantity of their own. */
@@ -221,6 +266,10 @@ const FRACTIONS: Record<string, { quantity: number; unit: string }> = {
   half: { quantity: 0.5, unit: 'kg' },
   'آدھا': { quantity: 0.5, unit: 'kg' },
   'آدھ': { quantity: 0.5, unit: 'kg' },
+  'आधा': { quantity: 0.5, unit: 'kg' },
+  'ਅੱਧਾ': { quantity: 0.5, unit: 'kg' },
+  'पाव': { quantity: 0.25, unit: 'kg' },
+  'ਪਾਓ': { quantity: 0.25, unit: 'kg' },
 };
 
 /**
@@ -285,24 +334,67 @@ function foldArabicScript(value: string): string {
 }
 
 /**
- * Urdu and Arabic-Indic digits, folded to the ones `Number()` understands.
+ * The marks Indic scripts write inconsistently.
  *
- * "۲ کلو" is two kilos. Left alone it is not a number to JavaScript at all, and
- * the quantity is silently lost.
+ * Whisper decides Punjabi is Hindi more often than not and hands back
+ * Devanagari; asked for Punjabi it sometimes hands back Gurmukhi. Both scripts
+ * carry marks that the same word appears with and without depending on nothing
+ * in particular — the addak in ਇੱਕ, the bindi in ਨੌਂ, the nukta in प्याज़ — so
+ * two spellings a reader would call identical compare as different and an
+ * alias list matches nothing while looking completely correct.
+ *
+ * Only the optional marks go. Vowel signs stay: strip those and टमाटर and
+ * टमटर become the same word, which is a different and worse kind of wrong.
  */
-function foldDigits(value: string): string {
-  return value.replace(/[\u0660-\u0669\u06F0-\u06F9]/g, digit => {
-    const code = digit.codePointAt(0)!;
-    const base = code >= 0x06f0 ? 0x06f0 : 0x0660;
-    return String(code - base);
-  });
+function foldIndicMarks(value: string): string {
+  return (
+    value
+      // Anusvara, candrabindu and the Gurmukhi bindi/tippi/addak.
+      .replace(/[\u0900-\u0902\u0A01\u0A02\u0A70\u0A71]/g, '')
+      // Nukta, in both scripts.
+      .replace(/[\u093C\u0A3C]/g, '')
+  );
 }
 
-/** Lowercase, unpunctuated, single-spaced. Everything compares in this form. */
+/**
+ * Every digit family a Pakistani grocery order can arrive in, folded to the
+ * ones `Number()` understands.
+ *
+ * "۲ کلو" is two kilos. Left alone it is not a number to JavaScript at all, and
+ * the quantity is silently lost — as is "२ किलो" from a Devanagari decode.
+ */
+function foldDigits(value: string): string {
+  return value.replace(
+    /[\u0660-\u0669\u06F0-\u06F9\u0966-\u096F\u0A66-\u0A6F]/g,
+    digit => {
+      const code = digit.codePointAt(0)!;
+      const base =
+        code >= 0x0a66
+          ? 0x0a66
+          : code >= 0x0966
+            ? 0x0966
+            : code >= 0x06f0
+              ? 0x06f0
+              : 0x0660;
+      return String(code - base);
+    },
+  );
+}
+
+/**
+ * Lowercase, unpunctuated, single-spaced. Everything compares in this form.
+ *
+ * `\p{M}` is in the keep-set for a reason that cost an entire language. Urdu
+ * writes its vowels as letters, so stripping marks did no harm there — but
+ * Devanagari and Gurmukhi write them as combining marks, which are not
+ * `\p{L}` and were being replaced with spaces. टमाटर arrived as "टम टर", two
+ * fragments matching nothing, and every Punjabi order that Whisper decided was
+ * Hindi came back completely unreadable while the alias list looked correct.
+ */
 function normalise(value: string): string {
-  return foldDigits(foldArabicScript(value))
+  return foldDigits(foldIndicMarks(foldArabicScript(value)))
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s.]/gu, ' ')
+    .replace(/[^\p{L}\p{N}\p{M}\s.]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -341,6 +433,128 @@ function isNearMiss(a: string, b: string): boolean {
   }
   return previous[b.length] <= allowance;
 }
+
+/**
+ * Words that carry no product of their own.
+ *
+ * Everything here is either grammar, a unit, or a quantity — so a sentence made
+ * entirely of these and matched products has been fully understood, and
+ * anything left over is something the customer said that we did not take.
+ *
+ * Numbers and fractions are not listed: they already have tables, and
+ * duplicating them here is how the two drift apart.
+ */
+const FILLER = new Set(
+  [
+    // Deliberately absent: wala/wali. They are how a size or a variant gets
+    // said — "bara wala surf" is one thing somebody asked for — so treating
+    // them as grammar splits a phrase we are supposed to hand back whole.
+    // Urdu and Roman grammar around an order.
+    'aur', 'or', 'ar', 'mujhe', 'mujhay', 'muje', 'mainu', 'menu',
+    'chahiye', 'chahie', 'chaiye', 'chahida', 'de', 'do', 'dedo', 'dena',
+    'dena', 'dedena', 'ka', 'ki', 'ke', 'kay', 'bhi',
+    'please', 'plz', 'and', 'a', 'an', 'the', 'some', 'of', 'me', 'i', 'we',
+    'want', 'need', 'give', 'get', 'bhej', 'bhejo', 'lao', 'la', 'chaida',
+    'اور', 'مجھے', 'چاہیے', 'دے', 'دو', 'دیدو', 'کا', 'کی', 'کے', 'بھی',
+    'لاؤ', 'بھیجو',
+    'और', 'मुझे', 'चाहिए', 'दे', 'दो', 'का', 'की', 'के', 'भी', 'लाओ',
+    'ਅਤੇ', 'ਮੈਨੂੰ', 'ਚਾਹੀਦਾ', 'ਦੇ', 'ਦਿਓ', 'ਦਾ', 'ਦੀ', 'ਵੀ',
+    // Units. A unit without a product is not an item anyone can be sold.
+    'kilo', 'kilos', 'kg', 'kgs', 'gram', 'grams', 'g', 'litre', 'liter',
+    'litres', 'liters', 'l', 'ml', 'packet', 'packets', 'pack', 'bottle',
+    'bottles', 'dabba', 'dibba', 'thaila', 'piece', 'pieces', 'pcs',
+    'کلو', 'گرام', 'لیٹر', 'پیکٹ', 'بوتل', 'ڈبہ', 'تھیلا',
+    'किलो', 'ग्राम', 'लीटर', 'पैकेट', 'बोतल', 'डिब्बा',
+    'ਕਿਲੋ', 'ਗ੍ਰਾਮ', 'ਲੀਟਰ', 'ਪੈਕੇਟ', 'ਬੋਤਲ', 'ਡੱਬਾ',
+  ].map(normalise),
+);
+
+/** A word that could be a product: not filler, not a number, long enough. */
+function couldBeProduct(word: string): boolean {
+  if (word.length < 3) return false;
+  if (FILLER.has(word)) return false;
+  if (FOLDED_NUMBERS.has(word) || FOLDED_FRACTIONS.has(word)) return false;
+  if (Number.isFinite(Number(word))) return false;
+  return true;
+}
+
+/**
+ * A word reduced to how it sounds, so spelling stops mattering.
+ *
+ * Roman Urdu has no agreed spelling. The same customer writes — and Whisper
+ * transcribes — tamatar, tamater, timaatar, tamaatar, and an edit distance has
+ * to be loose enough to join all four, at which point it also joins namak to
+ * palak and sells someone salt instead of spinach.
+ *
+ * A skeleton sidesteps the trade-off. Digraphs that are one sound in Urdu
+ * collapse to one letter, letters that are written interchangeably are folded
+ * together, every vowel becomes the same vowel, and runs are squeezed. All four
+ * spellings of tomato become `tamatar`; palak stays `palak` and namak stays
+ * `namak`, because they differ in a consonant and consonants are what this
+ * keeps.
+ *
+ * Latin only. The Indic scripts spell consistently enough that their aliases
+ * match exactly, and folding their vowels would collapse genuinely different
+ * words.
+ */
+export function skeleton(word: string): string {
+  const latin = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (!latin) return '';
+  return (
+    latin
+      // Aspirates and digraphs: one sound, written with and without the h.
+      .replace(/kh/g, 'k')
+      .replace(/gh/g, 'g')
+      .replace(/ph/g, 'f')
+      .replace(/th/g, 't')
+      .replace(/dh/g, 'd')
+      .replace(/bh/g, 'b')
+      .replace(/ch/g, 'c')
+      .replace(/sh/g, 's')
+      .replace(/ck/g, 'k')
+      // Letters people swap for each other writing Urdu in Latin.
+      .replace(/q/g, 'k')
+      .replace(/x/g, 'ks')
+      .replace(/w/g, 'v')
+      .replace(/z/g, 'j')
+      .replace(/y/g, 'i')
+      // Every vowel is the same vowel: aa, ee, ai and a are one sound as far
+      // as a shopping list is concerned.
+      .replace(/[aeiou]+/g, 'a')
+      // A doubled consonant is somebody leaning on a key.
+      .replace(/(.)\1+/g, '$1')
+  );
+}
+
+const RESERVED_SOUNDS: ReadonlySet<string> = new Set(
+  [...FILLER, ...FOLDED_NUMBERS.keys(), ...FOLDED_FRACTIONS.keys()]
+    .map(skeleton)
+    .filter(key => key.length >= 3),
+);
+
+const SKELETONS: ReadonlyMap<string, string> = (() => {
+  const index = new Map<string, string>();
+  const clashed = new Set<string>();
+  for (const entry of CATALOG) {
+    for (const alias of entry.aliases) {
+      // Multi-word aliases are matched whole elsewhere; a skeleton of a phrase
+      // is not a sound anyone makes.
+      if (alias.includes(' ')) continue;
+      const key = skeleton(alias);
+      if (key.length < 3) continue;
+      // A sound a unit or a number also makes is not a product's sound.
+      if (RESERVED_SOUNDS.has(key)) continue;
+      const held = index.get(key);
+      if (held && held !== entry.id) {
+        clashed.add(key);
+        continue;
+      }
+      index.set(key, entry.id);
+    }
+  }
+  for (const key of clashed) index.delete(key);
+  return index;
+})();
 
 /**
  * Matches one spoken request against the catalogue.
@@ -385,12 +599,26 @@ export function matchCatalog(
     }
   }
 
+  // Only words that could name a product. "kilo" is two edits from "kela" and
+  // sounds identical once vowels are folded, so a loose tier that considers
+  // units will cheerfully sell somebody a banana for saying kilo.
+  const candidates = words.filter(couldBeProduct);
+
   for (const entry of CATALOG) {
     const near = entry.aliases.some(
       alias =>
-        alias.length >= 4 && words.some(word => word.length >= 4 && isNearMiss(word, alias)),
+        alias.length >= 4 &&
+        candidates.some(word => word.length >= 4 && isNearMiss(word, alias)),
     );
     if (near) {
+      return { ...base, productId: entry.id, productName: entry.name, confidence: 'medium' };
+    }
+  }
+
+  // Last, and on sound rather than letters: this is what catches a spelling
+  // nobody has written down, which in Roman Urdu is most of them.
+  for (const entry of CATALOG) {
+    if (candidates.some(word => SKELETONS.get(skeleton(word)) === entry.id)) {
       return { ...base, productId: entry.id, productName: entry.name, confidence: 'medium' };
     }
   }
@@ -424,26 +652,116 @@ export function matchCatalog(
  */
 const QUANTITY_LOOKBACK = 3;
 
-function quantityBefore(
+/**
+ * And how far forward.
+ *
+ * Tighter than the lookback. A number in front of an item is that item's
+ * ("tamatar do"); a number three words later is almost always the next item's,
+ * and reaching for it is how one item's quantity lands on another.
+ */
+const QUANTITY_LOOKAHEAD = 2;
+
+/**
+ * Reads a number sitting at one position, or nothing.
+ *
+ * Split out because the same test is needed looking both ways, and the two
+ * directions differ only in which indices they walk.
+ */
+function numberAt(
   words: readonly string[],
   at: number,
-  taken: ReadonlySet<number>,
 ): { quantity: number; unit?: string } | null {
-  for (let i = at - 1; i >= 0 && i >= at - QUANTITY_LOOKBACK; i -= 1) {
-    // Another product's own word. Whatever is behind it is that item's
-    // quantity, not this one's.
-    if (taken.has(i)) return null;
-    const word = words[i];
-    const fraction = FOLDED_FRACTIONS.get(word);
-    if (fraction) return fraction;
-    const spoken = FOLDED_NUMBERS.get(word);
-    if (spoken !== undefined) return { quantity: spoken };
-    const digits = Number(word);
-    if (Number.isFinite(digits) && digits > 0 && digits <= 99) {
-      return { quantity: digits };
-    }
+  const word = words[at];
+  if (word === undefined) return null;
+  const fraction = FOLDED_FRACTIONS.get(word);
+  if (fraction) return fraction;
+  const spoken = FOLDED_NUMBERS.get(word);
+  if (spoken !== undefined) return { quantity: spoken };
+  const digits = Number(word);
+  if (Number.isFinite(digits) && digits > 0 && digits <= 99) {
+    return { quantity: digits };
   }
   return null;
+}
+
+/**
+ * Which number belongs to which item.
+ *
+ * Urdu and Punjabi put the quantity on either side of the noun and people use
+ * both in one breath: "do kilo tamatar" and "tamatar do" are the same order.
+ * Reading only backwards — which is what this did — gave every item in
+ * "tamatar do kela aik palak teen" a quantity of one, silently, on a sentence
+ * that had said the numbers perfectly clearly.
+ *
+ * So numbers are assigned rather than looked up, each one used once, nearest
+ * item first. Assignment is what makes both directions safe: in "tamatar do
+ * kela", the "do" is behind the banana and in front of the tomato, and only
+ * one of them can have it.
+ */
+function assignQuantities(
+  words: readonly string[],
+  hits: readonly { at: number }[],
+): ({ quantity: number; unit?: string } | null)[] {
+  const claimed = new Set<number>();
+  const product = new Set(hits.map(hit => hit.at));
+  const result: ({ quantity: number; unit?: string } | null)[] = hits.map(
+    () => null,
+  );
+
+  /** Walks outwards from an item, stopping where another item begins. */
+  const take = (from: number, step: -1 | 1, reach: number) => {
+    for (let i = from + step, n = 0; n < reach; i += step, n += 1) {
+      if (i < 0 || i >= words.length) return null;
+      // Another product's own word. Whatever is beyond it is that item's
+      // number, not this one's.
+      if (product.has(i)) return null;
+      if (claimed.has(i)) continue;
+      const read = numberAt(words, i);
+      if (read) {
+        claimed.add(i);
+        return read;
+      }
+    }
+    return null;
+  };
+
+  /**
+   * Which side the sentence puts its numbers on.
+   *
+   * Every number in "tamatar do kela aik palak teen" sits between two items, so
+   * whichever direction runs first takes all of them — one reading gives each
+   * item the number in front of it and the other gives each item the number
+   * behind it, and both are self-consistent. Only one is what was said.
+   *
+   * The first item settles it. A sentence that opens with a number is
+   * counting before it names ("do kilo tamatar"); a sentence that opens with a
+   * product is naming before it counts ("tamatar do"). People are consistent
+   * within one breath even when they are not consistent between breaths.
+   */
+  const first = hits[0];
+  const countsFirst =
+    !first ||
+    Array.from({ length: QUANTITY_LOOKBACK }, (_, n) => first.at - 1 - n).some(
+      i => i >= 0 && !product.has(i) && numberAt(words, i) !== null,
+    );
+
+  const passes: [-1 | 1, number][] = countsFirst
+    ? [
+        [-1, QUANTITY_LOOKBACK],
+        [1, QUANTITY_LOOKAHEAD],
+      ]
+    : [
+        [1, QUANTITY_LOOKAHEAD],
+        [-1, QUANTITY_LOOKBACK],
+      ];
+
+  for (const [step, reach] of passes) {
+    hits.forEach((hit, index) => {
+      if (!result[index]) result[index] = take(hit.at, step, reach);
+    });
+  }
+
+  return result;
 }
 
 /**
@@ -510,7 +828,7 @@ export function scanTranscript(transcript: string): CatalogMatch[] {
 
   for (let i = 0; i < words.length; i += 1) {
     const word = words[i];
-    if (word.length < 4) continue;
+    if (word.length < 4 || !couldBeProduct(word)) continue;
     for (const entry of CATALOG) {
       if (found.has(entry.id)) continue;
       const near = entry.aliases.some(
@@ -524,15 +842,27 @@ export function scanTranscript(transcript: string): CatalogMatch[] {
     }
   }
 
+  // Then on sound, for the spellings an edit distance is too strict to reach.
+  for (let i = 0; i < words.length; i += 1) {
+    const word = words[i];
+    if (word.length < 4 || !couldBeProduct(word)) continue;
+    const id = SKELETONS.get(skeleton(word));
+    if (!id || found.has(id)) continue;
+    const entry = CATALOG.find(candidate => candidate.id === id);
+    if (!entry) continue;
+    hits.push({ entry, at: i, said: word, confidence: 'medium' });
+    found.add(entry.id);
+  }
+
   // Back into the order they were said in, so the cart fills the way the
   // sentence ran.
   hits.sort((a, b) => a.at - b.at);
-  const taken = new Set(hits.map(hit => hit.at));
 
   const unstocked = new Set(UNSTOCKED.map(entry => entry.id));
+  const quantities = assignQuantities(words, hits);
 
-  return hits.map(hit => {
-    const read = quantityBefore(words, hit.at, taken);
+  return hits.map((hit, index) => {
+    const read = quantities[index];
     const base = {
       query: hit.said,
       quantity: read?.quantity ?? 1,
@@ -557,46 +887,6 @@ export function scanTranscript(transcript: string): CatalogMatch[] {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Words that carry no product of their own.
- *
- * Everything here is either grammar, a unit, or a quantity — so a sentence made
- * entirely of these and matched products has been fully understood, and
- * anything left over is something the customer said that we did not take.
- *
- * Numbers and fractions are not listed: they already have tables, and
- * duplicating them here is how the two drift apart.
- */
-const FILLER = new Set(
-  [
-    // Deliberately absent: wala/wali. They are how a size or a variant gets
-    // said — "bara wala surf" is one thing somebody asked for — so treating
-    // them as grammar splits a phrase we are supposed to hand back whole.
-    // Urdu and Roman grammar around an order.
-    'aur', 'or', 'ar', 'mujhe', 'mujhay', 'muje', 'mainu', 'menu',
-    'chahiye', 'chahie', 'chaiye', 'chahida', 'de', 'do', 'dedo', 'dena',
-    'dena', 'dedena', 'ka', 'ki', 'ke', 'kay', 'bhi',
-    'please', 'plz', 'and', 'a', 'an', 'the', 'some', 'of', 'me', 'i', 'we',
-    'want', 'need', 'give', 'get', 'bhej', 'bhejo', 'lao', 'la', 'chaida',
-    'اور', 'مجھے', 'چاہیے', 'دے', 'دو', 'دیدو', 'کا', 'کی', 'کے', 'بھی',
-    'لاؤ', 'بھیجو',
-    // Units. A unit without a product is not an item anyone can be sold.
-    'kilo', 'kilos', 'kg', 'kgs', 'gram', 'grams', 'g', 'litre', 'liter',
-    'litres', 'liters', 'l', 'ml', 'packet', 'packets', 'pack', 'bottle',
-    'bottles', 'dabba', 'dibba', 'thaila', 'piece', 'pieces', 'pcs',
-    'کلو', 'گرام', 'لیٹر', 'پیکٹ', 'بوتل', 'ڈبہ', 'تھیلا',
-  ].map(normalise),
-);
-
-/** A word that could be a product: not filler, not a number, long enough. */
-function couldBeProduct(word: string): boolean {
-  if (word.length < 3) return false;
-  if (FILLER.has(word)) return false;
-  if (FOLDED_NUMBERS.has(word) || FOLDED_FRACTIONS.has(word)) return false;
-  if (Number.isFinite(Number(word))) return false;
-  return true;
-}
-
-/**
  * What the customer said that nothing accounted for.
  *
  * The point is §26: never silently lose a word. A sentence that produced two
@@ -613,8 +903,11 @@ export function unresolvedFragments(
   transcript: string,
   matches: readonly CatalogMatch[],
 ): string[] {
-  const text = normalise(transcript);
-  if (!text) return [];
+  // Split before normalising, so each token keeps the spelling the customer's
+  // own words arrived in. Reporting "तारग" back at somebody who said "तारंग"
+  // is showing them a fold we applied for our own convenience.
+  const spoken = transcript.split(/\s+/).filter(Boolean);
+  if (!spoken.length) return [];
 
   // Every word any match consumed, including the aliases behind the product it
   // resolved to: the transcript says "kela", the match says "Banana Premium",
@@ -635,8 +928,9 @@ export function unresolvedFragments(
     run = [];
   };
 
-  for (const word of text.split(' ').filter(Boolean)) {
-    if (consumed.has(word) || !couldBeProduct(word)) {
+  for (const word of spoken) {
+    const folded = normalise(word);
+    if (!folded || consumed.has(folded) || !couldBeProduct(folded)) {
       flush();
       continue;
     }
