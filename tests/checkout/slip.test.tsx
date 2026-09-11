@@ -1,5 +1,6 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
 import OrderSlip from '../../src/components/checkout/OrderSlip';
+import type { Receipt } from '../../src/services/receipt';
 import type { CartLine } from '../../src/state/cart';
 
 /**
@@ -35,16 +36,21 @@ const lines: CartLine[] = [
   },
 ];
 
-const props = {
+const receipt: Receipt = {
   reference: 'HM-8842',
   lines,
-  subtotal: 240,
+  subtotal: 300,
+  discount: 60,
   deliveryFee: 99,
   total: 339,
-  address: 'House 12, Gulberg',
-  phone: '0300 1234567',
   name: 'Ayesha',
+  phone: '300 123 4567',
+  area: 'Satellite Town',
+  address: 'House 12, Gulberg',
+  placedAt: new Date('2026-09-11T10:30:00Z'),
 };
+
+const props = { receipt };
 
 /**
  * The layout pass a real screen would give it.
@@ -99,6 +105,15 @@ describe('the order slip', () => {
     expect(view.getAllByText('Rs. 339').length).toBeGreaterThan(0);
     // A waived delivery fee reads as a decision; "Rs. 0" reads as a bug.
     expect(view.getAllByText('Rs. 99').length).toBeGreaterThan(0);
+    // Subtotal is the list price and the discount is the difference, so the
+    // three lines add up to what is actually charged. Printing the reduced
+    // price as the subtotal and then subtracting the saving again would take
+    // the discount off twice.
+    expect(view.getAllByText('Rs. 300').length).toBeGreaterThan(0);
+    expect(view.getAllByText('- Rs. 60').length).toBeGreaterThan(0);
+    // And where it is going, which is the half of a docket that matters when
+    // somebody else is carrying it.
+    expect(view.getAllByText('Satellite Town').length).toBeGreaterThan(0);
   });
 
   it('feeds, refuses to be cut early, then tears exactly once', async () => {

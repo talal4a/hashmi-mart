@@ -13,11 +13,12 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { Scissors } from 'lucide-react-native';
+import { Printer as PrinterIcon, Scissors } from 'lucide-react-native';
 import PressableScale from '../ui/PressableScale';
 import { grocery } from '../home/groceryTheme';
 import { tapHandoff, tapSend } from '../voice/haptics';
-import type { CartLine } from '../../state/cart';
+import { money } from '../../services/pricing';
+import type { Receipt } from '../../services/receipt';
 
 /**
  * The order slip, printed and then torn off.
@@ -77,29 +78,16 @@ const BLADE_MS = 300;
 const PART_MS = 620;
 
 type Props = {
-  reference: string;
-  lines: readonly CartLine[];
-  subtotal: number;
-  deliveryFee: number;
-  total: number;
-  address: string;
-  phone: string;
-  name: string;
+  receipt: Receipt;
   /** Called once the slip has been torn off and settled. */
   onTorn?: () => void;
+  /** Prints or shares the same order. Omitted, the button is not offered. */
+  onPrint?: () => void;
+  /** Shown on the print button while a sheet is open over the app. */
+  printing?: boolean;
 };
 
-export default function OrderSlip({
-  reference,
-  lines,
-  subtotal,
-  deliveryFee,
-  total,
-  address,
-  phone,
-  name,
-  onTorn,
-}: Props) {
+export default function OrderSlip({ receipt, onTorn, onPrint, printing }: Props) {
   const reduced = useReducedMotion();
 
   /**
@@ -338,14 +326,7 @@ export default function OrderSlip({
             <Animated.View pointerEvents="none" style={[s.lift, lift]} />
             <View style={s.keep}>
               <SlipFace
-                reference={reference}
-                lines={lines}
-                subtotal={subtotal}
-                deliveryFee={deliveryFee}
-                total={total}
-                address={address}
-                phone={phone}
-                name={name}
+                receipt={receipt}
                 onHeight={next => measure(next + LEADER)}
               />
               <TornEdge />
@@ -358,23 +339,48 @@ export default function OrderSlip({
         <Blade blade={blade} span={span} />
       </View>
 
-      <PressableScale
-        accessibilityRole="button"
-        accessibilityLabel={torn ? 'Slip torn off' : 'Tear off the slip'}
-        accessibilityState={{ disabled: torn || !ready }}
-        onPress={() => {
-          if (!ready || torn) return;
-          tapHandoff();
-          tear();
-        }}
-        scaleTo={0.96}
-        style={[s.tear, (torn || !ready) && s.tearOff]}
-      >
-        <Scissors size={15} color={torn ? FADED : grocery.blue} strokeWidth={2.4} />
-        <Text style={[s.tearText, torn && s.tearTextOff]}>
-          {torn ? 'Torn off — it’s yours' : ready ? 'Tear off' : 'Printing…'}
-        </Text>
-      </PressableScale>
+      <View style={s.tools}>
+        {onPrint ? (
+          <PressableScale
+            accessibilityRole="button"
+            accessibilityLabel="Print this receipt"
+            accessibilityState={{ disabled: !ready || printing }}
+            onPress={() => {
+              if (!ready || printing) return;
+              onPrint();
+            }}
+            scaleTo={0.96}
+            style={[s.tool, s.toolGhost, (!ready || printing) && s.toolOff]}
+          >
+            <PrinterIcon size={15} color={grocery.blue} strokeWidth={2.4} />
+            <Text style={s.toolGhostText}>
+              {printing ? 'Printing…' : 'Print receipt'}
+            </Text>
+          </PressableScale>
+        ) : null}
+
+        <PressableScale
+          accessibilityRole="button"
+          accessibilityLabel={torn ? 'Slip torn off' : 'Tear off the slip'}
+          accessibilityState={{ disabled: torn || !ready }}
+          onPress={() => {
+            if (!ready || torn) return;
+            tapHandoff();
+            tear();
+          }}
+          scaleTo={0.96}
+          style={[s.tool, s.toolSolid, (torn || !ready) && s.toolOff]}
+        >
+          <Scissors
+            size={15}
+            color={torn ? FADED : grocery.white}
+            strokeWidth={2.4}
+          />
+          <Text style={[s.toolSolidText, torn && s.toolOffText]}>
+            {torn ? 'Torn off' : ready ? 'Tear it' : 'Printing…'}
+          </Text>
+        </PressableScale>
+      </View>
     </View>
   );
 }
@@ -488,24 +494,10 @@ const TEETH = Array.from({ length: 21 }, (_, index) => index);
 /* ── What is printed on it ─────────────────────────────────────────────── */
 
 function SlipFace({
-  reference,
-  lines,
-  subtotal,
-  deliveryFee,
-  total,
-  address,
-  phone,
-  name,
+  receipt,
   onHeight,
 }: {
-  reference: string;
-  lines: readonly CartLine[];
-  subtotal: number;
-  deliveryFee: number;
-  total: number;
-  address: string;
-  phone: string;
-  name: string;
+  receipt: Receipt;
   onHeight: (height: number) => void;
 }) {
   return (
@@ -519,39 +511,50 @@ function SlipFace({
       <Text style={s.small}>Fresh grocery · Cash on delivery</Text>
       <Rule />
 
-      {name ? <Line label="Customer" value={name} /> : null}
-      {phone ? <Line label="Phone" value={phone} /> : null}
-      {address ? <Line label="Deliver" value={address} /> : null}
+      <Text style={s.refLabel}>ORDER CONFIRMED</Text>
+      <Text style={s.ref} selectable>
+        {receipt.reference}
+      </Text>
+      <Text style={s.small}>
+        {receipt.placedAt.toLocaleString('en-PK')}
+      </Text>
       <Rule />
 
-      {lines.map(line => (
+      {receipt.lines.map(line => (
         <View key={line.id} style={s.item}>
           <Text style={s.itemQty}>{line.quantity}×</Text>
           <Text style={s.itemName} numberOfLines={1}>
             {line.name}
           </Text>
-          <Text style={s.itemPrice}>{line.total.toLocaleString('en-PK')}</Text>
+          <Text style={s.itemPrice}>{money(line.total)}</Text>
         </View>
       ))}
       <Rule />
 
-      <Line label="Subtotal" value={`Rs. ${subtotal.toLocaleString('en-PK')}`} />
+      <Line label="Subtotal" value={money(receipt.subtotal)} />
+      {receipt.discount > 0 ? (
+        <Line label="Discount" value={`- ${money(receipt.discount)}`} />
+      ) : null}
       <Line
         label="Delivery"
-        value={deliveryFee === 0 ? 'FREE' : `Rs. ${deliveryFee}`}
+        value={receipt.deliveryFee === 0 ? 'FREE' : money(receipt.deliveryFee)}
       />
       <View style={s.totalRow}>
         <Text style={s.totalLabel}>TOTAL</Text>
-        <Text style={s.totalValue}>Rs. {total.toLocaleString('en-PK')}</Text>
+        <Text style={s.totalValue}>{money(receipt.total)}</Text>
       </View>
       <Rule />
 
-      <Text style={s.refLabel}>ORDER REFERENCE</Text>
-      <Text style={s.ref} selectable>
-        {reference}
-      </Text>
+      <Line label="Payment" value="Cash on delivery" />
+      <View style={s.to}>
+        <Text style={s.toLabel}>DELIVER TO</Text>
+        <Text style={s.toLine}>{receipt.name}</Text>
+        <Text style={s.toLine}>+92 {receipt.phone}</Text>
+        <Text style={s.toLine}>{receipt.area}</Text>
+        <Text style={s.toLine}>{receipt.address}</Text>
+      </View>
 
-      <Barcode seed={reference} />
+      <Barcode seed={receipt.reference} />
       <Text style={s.thanks}>SHUKRIYA · THANK YOU</Text>
     </View>
   );
@@ -844,6 +847,14 @@ const s = StyleSheet.create({
     textAlign: 'center',
     marginTop: 2,
   },
+  to: { marginTop: 6, gap: 1 },
+  toLabel: {
+    fontFamily: MONO,
+    fontSize: 8.5,
+    letterSpacing: 1.4,
+    color: FADED,
+  },
+  toLine: { fontFamily: MONO, fontSize: 10.5, lineHeight: 15, color: INK },
   ref: {
     fontFamily: MONO,
     fontSize: 15,
@@ -893,20 +904,32 @@ const s = StyleSheet.create({
     borderBottomColor: grocery.canvas,
   },
 
-  /* the button */
-  tear: {
+  /* the buttons */
+  tools: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 44,
+    alignSelf: 'stretch',
+    maxWidth: 320,
+  },
+  tool: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    height: 44,
-    minWidth: 168,
-    paddingHorizontal: 20,
-    borderRadius: 22,
-    marginTop: 44,
-    backgroundColor: grocery.pale,
+    gap: 7,
+    height: 46,
+    paddingHorizontal: 14,
+    borderRadius: 23,
   },
-  tearOff: { opacity: 0.75 },
-  tearText: { fontSize: 14, fontWeight: '800', color: grocery.blue },
-  tearTextOff: { color: FADED },
+  toolGhost: {
+    backgroundColor: grocery.white,
+    borderWidth: 1.5,
+    borderColor: '#CFEAF8',
+  },
+  toolSolid: { backgroundColor: grocery.blue },
+  toolOff: { opacity: 0.55 },
+  toolGhostText: { fontSize: 13.5, fontWeight: '800', color: grocery.blue },
+  toolSolidText: { fontSize: 13.5, fontWeight: '800', color: grocery.white },
+  toolOffText: { color: FADED },
 });

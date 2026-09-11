@@ -27,15 +27,29 @@ export type OrderLine = {
 
 export type OrderDraft = {
   lines: OrderLine[];
+  /** Goods at the price charged. Unchanged in meaning; see `listSubtotal`. */
   subtotal: number;
+  /**
+   * What the offers took off, and what the goods cost before them.
+   *
+   * Written down rather than recomputed, for the same reason the line prices
+   * are: a discount worked out again at fulfilment is a discount that can move
+   * after the customer agreed to it.
+   */
+  discount: number;
+  listSubtotal: number;
   deliveryFee: number;
   total: number;
   /** How the order was assembled, so voice orders can be audited as a group. */
   source: 'voice' | 'browse';
   transcript?: string | null;
   address: string;
+  /** The delivery zone, chosen from a list so the rider can be routed by it. */
+  area: string;
   phone: string;
   name: string;
+  /** Anything the customer added for the rider. Empty when they added nothing. */
+  instructions?: string | null;
 };
 
 export type PlacedOrder = { id: string; reference: string };
@@ -69,6 +83,8 @@ export async function placeOrder(draft: OrderDraft): Promise<PlacedOrder> {
       ...(draft.transcript ? { transcript: draft.transcript } : null),
       items: draft.lines,
       subtotal: draft.subtotal,
+      listSubtotal: draft.listSubtotal,
+      discount: draft.discount,
       deliveryFee: draft.deliveryFee,
       total: draft.total,
       currency: 'PKR',
@@ -76,7 +92,9 @@ export async function placeOrder(draft: OrderDraft): Promise<PlacedOrder> {
       contact: {
         name: draft.name,
         phone: draft.phone,
+        area: draft.area,
         address: draft.address,
+        ...(draft.instructions ? { instructions: draft.instructions } : null),
       },
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
