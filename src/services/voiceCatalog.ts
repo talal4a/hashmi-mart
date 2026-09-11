@@ -89,10 +89,41 @@ const ALIASES: Record<string, readonly string[]> = {
   salt: ['نمک', 'नमक', 'ਲੂਣ', 'ਨਮਕ', 'namak', 'loon', 'salt'],
   garlic: ['لہسن', 'लहसुन', 'ਲਸਣ', 'lehsan', 'lasan', 'lehsun', 'garlic'],
   ginger: ['ادرک', 'अदरक', 'ਅਦਰਕ', 'adrak', 'adrakh', 'ginger'],
+
+  /**
+   * Words we understand and genuinely do not carry.
+   *
+   * A small mart is not a supermarket, and being told "we don't stock mutton"
+   * is a different and far better experience than being told we could not make
+   * out a word we heard perfectly. These stay off `freshPicks` on purpose —
+   * they are what keeps that distinction real rather than theoretical.
+   */
+  fish: ['مچھلی', 'मछली', 'ਮੱਛੀ', 'machli', 'machhli', 'fish'],
+  mutton: ['بکرا', 'बकरा', 'ਬੱਕਰਾ', 'bakra', 'bakri', 'mutton', 'lamb'],
+  butter: ['مکھن', 'मक्खन', 'ਮੱਖਣ', 'makhan', 'makkhan', 'butter'],
+  honey: ['شہد', 'शहद', 'ਸ਼ਹਿਦ', 'shehad', 'shahad', 'honey'],
+
+  /**
+   * Brands, which is how half of these are actually asked for.
+   *
+   * Nobody says "washing powder" when they mean Surf, and "olpers" is said far
+   * more often than "doodh" by anyone who buys the carton. A brand keyed here
+   * and used in a product's name means both routes reach the same shelf.
+   */
+  olpers: ['اولپرز', 'ओलपर्स', 'olpers', 'olper', 'olpar', 'alpers'],
+  surf: ['سرف', 'सर्फ', 'ਸਰਫ', 'surf', 'serf', 'sarf', 'surfexcel', 'excel'],
+  coke: [
+    'کوک', 'کوکا کولا', 'कोक', 'ਕੋਕ',
+    'coke', 'kok', 'cok', 'cola', 'coca', 'cocacola',
+  ],
 };
 
 /** What to call a product we know the word for but do not sell. */
 const UNSTOCKED_LABELS: Record<string, string> = {
+  fish: 'fish',
+  mutton: 'mutton',
+  butter: 'butter',
+  honey: 'honey',
   potato: 'potatoes',
   onion: 'onions',
   milk: 'milk',
@@ -120,21 +151,62 @@ const UNSTOCKED_LABELS: Record<string, string> = {
  * the words in the product's own name, which is what keeps the two in step
  * without a second list to maintain.
  */
-export const CATALOG: readonly CatalogEntry[] = freshPicks.map(item => {
-  const words = item.name.toLowerCase().split(/\s+/);
-  const aliases = new Set<string>([item.name.toLowerCase(), ...words]);
-  for (const word of words) {
-    for (const alias of ALIASES[word] ?? []) aliases.add(alias);
+/**
+ * Words that describe a product without naming one.
+ *
+ * A shelf has several Fresh things on it and exactly one of them is what
+ * somebody means by "fresh". These are never names.
+ */
+const DESCRIPTORS = new Set([
+  'fresh', 'premium', 'organic', 'large', 'small', 'red', 'green', 'yellow',
+  'refined', 'iodised', 'iodized', 'farm', 'cooking', 'washing', 'powder',
+  'bottle', 'label', 'daily', 'pure', 'special', 'classic', 'original',
+]);
+
+/**
+ * The catalogue, built from what the app actually stocks.
+ *
+ * Derived from `freshPicks` rather than written out again, so an item that is
+ * removed from the shelf cannot keep being matched. Aliases are looked up by
+ * the words in the product's own name, which is what keeps the two in step
+ * without a second list to maintain.
+ *
+ * A name word only becomes a name when no other product uses it. That rule
+ * exists because the shelf grew: "Spinach Fresh", "Eggs Farm Fresh" and
+ * "Potato Fresh" between them made "fresh" an alias for eight different
+ * groceries, and the exact-match pass would have handed whoever said it
+ * whichever one happened to be defined first. A word several products share is
+ * not a name for any of them, and the check is cheap enough to run over the
+ * whole shelf every time it is built.
+ */
+export const CATALOG: readonly CatalogEntry[] = (() => {
+  const shared = new Map<string, number>();
+  for (const item of freshPicks) {
+    for (const word of new Set(item.name.toLowerCase().split(/\s+/))) {
+      shared.set(word, (shared.get(word) ?? 0) + 1);
+    }
   }
-  // Folded on the way in, so the comparison at match time is fold-to-fold. A
-  // fold applied to only one side is worse than no fold at all: it moves which
-  // spellings fail rather than fixing any of them.
-  return {
-    id: item.id,
-    name: item.name,
-    aliases: [...aliases].map(normalise),
-  };
-});
+
+  return freshPicks.map(item => {
+    const words = item.name.toLowerCase().split(/\s+/);
+    // The full name is always a name for itself; single words have to earn it.
+    const aliases = new Set<string>([item.name.toLowerCase()]);
+    for (const word of words) {
+      if (DESCRIPTORS.has(word)) continue;
+      if ((shared.get(word) ?? 0) > 1) continue;
+      aliases.add(word);
+      for (const alias of ALIASES[word] ?? []) aliases.add(alias);
+    }
+    // Folded on the way in, so the comparison at match time is fold-to-fold. A
+    // fold applied to only one side is worse than no fold at all: it moves
+    // which spellings fail rather than fixing any of them.
+    return {
+      id: item.id,
+      name: item.name,
+      aliases: [...aliases].map(normalise),
+    };
+  });
+})();
 
 /**
  * Words we understand and cannot sell.
@@ -145,8 +217,10 @@ export const CATALOG: readonly CatalogEntry[] = freshPicks.map(item => {
  * cart, instead of implying we did not hear them.
  */
 const UNSTOCKED: readonly CatalogEntry[] = (() => {
+  // Only the words that actually became names above; a descriptor shared
+  // across the shelf must not silently claim an alias key.
   const stocked = new Set(
-    freshPicks.flatMap(item => item.name.toLowerCase().split(/\s+/)),
+    CATALOG.flatMap(entry => entry.aliases),
   );
   return Object.entries(ALIASES)
     .filter(([key]) => !stocked.has(key))
@@ -555,6 +629,19 @@ const SKELETONS: ReadonlyMap<string, string> = (() => {
   for (const key of clashed) index.delete(key);
   return index;
 })();
+
+/**
+ * Which product a word sounds like, or nothing.
+ *
+ * Exported so the guard can be tested rather than assumed: a sound two
+ * groceries share has to come back empty, and the only way to show that is to
+ * ask. `cheeni` and `chana` are the live example — sugar and lentils genuinely
+ * rhyme once vowels fold, so neither is reachable by sound and both stay
+ * reachable by name.
+ */
+export function productBySound(word: string): string | undefined {
+  return SKELETONS.get(skeleton(word));
+}
 
 /**
  * Matches one spoken request against the catalogue.

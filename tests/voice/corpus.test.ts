@@ -2,6 +2,7 @@ import {
   scanTranscript,
   unresolvedFragments,
   skeleton,
+  productBySound,
   CATALOG,
 } from '../../src/services/voiceCatalog';
 
@@ -149,9 +150,10 @@ run('mixed scripts in one sentence, which is how people actually talk', [
 
 run('heard, and honestly reported as not understood', [
   {
+    // Surf is on the shelf now, so the only thing left unplaced is the size.
     said: 'do kilo tamatar aur bara wala surf',
-    want: [['tomato', 2]],
-    leftover: ['bara wala surf'],
+    want: [['tomato', 2], ['surf', 1]],
+    leftover: ['bara wala'],
   },
   {
     said: 'दो किलो टमाटर और तारंग',
@@ -194,8 +196,9 @@ run('the quantity, in every shape it is said', [
  * a looser matcher would make, and every one of them is a real grocery word.
  */
 run('never the wrong grocery', [
-  // Salt is two edits from spinach and we do not sell salt.
-  { said: 'namak do', want: [] },
+  // Salt is two edits from spinach. It must come back as salt, which we now
+  // stock, and never as spinach.
+  { said: 'namak do', want: [['salt', 2]] },
   // Units and grammar are not products, however much they sound like one.
   { said: 'do kilo', want: [] },
   { said: 'mujhe chahiye', want: [] },
@@ -203,12 +206,26 @@ run('never the wrong grocery', [
   { said: 'zzzqqq do', want: [], leftover: ['zzzqqq'] },
 ]);
 
-run('understood, and not on the shelf', [
-  // Heard perfectly. "We do not stock eggs" and "we did not catch you" are
-  // different things to be told, and only one is worth repeating the order for.
-  { said: 'anday chay aur do kilo tamatar', want: [['tomato', 2]], leftover: [] },
-  { said: 'अंडे छह और दो किलो टमाटर', want: [['tomato', 2]], leftover: [] },
-  { said: 'doodh do bread aik', want: [], leftover: [] },
+/**
+ * The orders people actually place.
+ *
+ * Every one of these was understood perfectly and filled nothing, back when the
+ * shop stocked five vegetables — which looks from the outside like the AI
+ * failing and is really an empty shelf.
+ */
+run('a real grocery order', [
+  { said: 'anday chay aur do kilo tamatar', want: [['eggs', 6], ['tomato', 2]], leftover: [] },
+  { said: 'अंडे छह और दो किलो टमाटर', want: [['eggs', 6], ['tomato', 2]], leftover: [] },
+  { said: 'doodh do bread aik', want: [['milk', 2], ['bread', 1]], leftover: [] },
+  // The brand and the category are the same order.
+  { said: 'olpers do aur bread aik', want: [['milk', 2], ['bread', 1]], leftover: [] },
+  { said: 'aloo do kilo pyaz aik kilo', want: [['potato', 2], ['onion', 1]] },
+  { said: 'chai patti aur cheeni', want: [['tea', 1], ['sugar', 1]] },
+  { said: 'kok do aur surf aik', want: [['coke', 2], ['surf', 1]] },
+  {
+    said: 'doodh do bread aik anday chay chawal aik kilo',
+    want: [['milk', 2], ['bread', 1], ['eggs', 6], ['rice', 1]],
+  },
 ]);
 
 describe('the sound index', () => {
@@ -229,25 +246,40 @@ describe('the sound index', () => {
     expect(skeleton('seb')).not.toBe(skeleton('saag'));
   });
 
-  it('gives no two products the same sound', () => {
-    // A sound that could be either of two groceries is a coin toss, not a
-    // match — the index drops those rather than picking the first defined.
+  it('refuses a sound that two products share, rather than picking one', () => {
+    // Real groceries rhyme. "cheeni" and "chana" collapse to one sound, as do
+    // "chakki" and "coke" — no tuning separates those, because they genuinely
+    // sound alike once Roman Urdu's vowels are folded.
+    //
+    // The guarantee is not that collisions cannot happen. It is that a
+    // colliding sound reaches nothing: a coin toss between sugar and lentils is
+    // worse than admitting we did not catch the word, and the flour/Coke pair
+    // was quietly putting a bag of atta in the cart for anyone saying "coke".
     const byKey = new Map<string, Set<string>>();
     for (const entry of CATALOG) {
       for (const alias of entry.aliases) {
         if (alias.includes(' ')) continue;
         const key = skeleton(alias);
         if (key.length < 3) continue;
-        const held = byKey.get(key) ?? new Set<string>();
-        held.add(entry.id);
-        byKey.set(key, held);
+        byKey.set(key, (byKey.get(key) ?? new Set<string>()).add(entry.id));
       }
     }
-    const collisions = [...byKey.entries()].filter(([, ids]) => ids.size > 1);
-    // Reported rather than merely counted, so a future alias that collides
-    // says which words it was.
-    expect(collisions.map(([key, ids]) => `${key}: ${[...ids].join('/')}`)).toEqual(
-      [],
-    );
+
+    const shared = [...byKey.entries()].filter(([, ids]) => ids.size > 1);
+    // Not zero. A real shelf has rhyming products on it.
+    expect(shared.length).toBeGreaterThan(0);
+
+    // And not one of them is reachable by sound.
+    for (const [key] of shared) {
+      const reachable = [...byKey.keys()].find(
+        candidate => candidate === key && productBySound(candidate) !== undefined,
+      );
+      expect(reachable).toBeUndefined();
+    }
+
+    // While both members stay perfectly reachable by name.
+    expect(scanTranscript('cheeni aik')[0]?.productId).toBe('sugar');
+    expect(scanTranscript('chana aik')[0]?.productId).toBe('lentils');
+    expect(scanTranscript('coke do')[0]?.productId).toBe('coke');
   });
 });

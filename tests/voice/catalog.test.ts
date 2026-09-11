@@ -26,9 +26,9 @@ describe('spoken quantities', () => {
     ['do kilo tamatar', 2],
     ['teen kela', 3],
     ['aik packet doodh', 1],
-    ['paanch anday', 5],
+    ['paanch machli', 5],
     ['das seb', 10],
-    ['darjan anday', 12],
+    ['darjan machli', 12],
     ['2 kilo aloo', 2],
   ])('reads %s as %s', (phrase, expected) => {
     expect(readQuantity(phrase)?.quantity).toBe(expected);
@@ -217,7 +217,7 @@ describe('the products that had no aliases at all', () => {
     ['khira', 'cucumber'],
   ])('matches %s', (spoken, id) => {
     // Two of five stocked products had no Urdu aliases whatsoever, while
-    // aliases existed for milk and eggs, which are not stocked.
+    // aliases existed for milk and fish, which are not stocked.
     expect(matchCatalog(spoken).productId).toBe(id);
   });
 });
@@ -226,7 +226,7 @@ describe('the products that had no aliases at all', () => {
  * Reading the sentence itself.
  *
  * `matchCatalog` answers "which product is this phrase" — one phrase, one
- * answer — which silently loses every item but one when it is handed a whole
+ * answer — which silently loses every item but one when it is hmachhlid a whole
  * sentence. That is what "I need bananas and tomatoes" came back with: the
  * tomatoes. These pin the floor under the model: whatever the parse does or
  * fails to do, a sentence naming things we stock produces those things.
@@ -318,9 +318,9 @@ describe('reading an order', () => {
   it('keeps an item we do not stock, which the scan can never report', () => {
     // "Heard, but not sold here" is the one thing only the parse knows: the
     // scan sees the shelf, so it can only ever find what is on it.
-    const read = readOrder('mujhe anday chahiye', [{ query: 'anday' }]);
+    const read = readOrder('mujhe machli chahiye', [{ query: 'machli' }]);
     expect(read).toEqual([
-      expect.objectContaining({ query: 'anday', confidence: 'low' }),
+      expect.objectContaining({ query: 'machli', confidence: 'low' }),
     ]);
   });
 
@@ -338,19 +338,19 @@ describe('reading an order', () => {
  * These two failures used to be one: an item we do not sell and a word we
  * could not place both came back as an unmatched row saying "not sold here".
  * They deserve different words because they call for different actions —
- * saying the order again fixes a misheard word and will never conjure eggs —
+ * saying the order again fixes a misheard word and will never conjure fish —
  * and telling a customer we did not understand them when we understood
  * perfectly is the worse of the two mistakes.
  */
 describe('items we know and do not sell', () => {
   it('names an unstocked item rather than shrugging at it', () => {
-    const match = matchCatalog('anday');
+    const match = matchCatalog('machli');
     expect(match.productId).toBeUndefined();
-    expect(match.unstocked).toBe('eggs');
+    expect(match.unstocked).toBe('fish');
   });
 
   it('names it from Urdu script too', () => {
-    expect(matchCatalog('انڈے').unstocked).toBe('eggs');
+    expect(matchCatalog('مچھلی').unstocked).toBe('fish');
   });
 
   it('leaves a word it genuinely could not place unnamed', () => {
@@ -361,24 +361,24 @@ describe('items we know and do not sell', () => {
   });
 
   it('finds one inside a sentence, beside an item we do stock', () => {
-    const found = scanTranscript('مجھے کیلا اور انڈے چاہیے');
+    const found = scanTranscript('مجھے کیلا اور مچھلی چاہیے');
     expect(found).toHaveLength(2);
     expect(found[0].productId).toBe('banana');
-    expect(found[1].unstocked).toBe('eggs');
+    expect(found[1].unstocked).toBe('fish');
     // No id, so nothing downstream can put it in a cart.
     expect(found[1].productId).toBeUndefined();
   });
 
   it('never gives an unstocked item an id that could reach a cart', () => {
-    for (const match of scanTranscript('anday chawal aloo namak')) {
+    for (const match of scanTranscript('machli chawal aloo namak')) {
       if (match.unstocked) expect(match.productId).toBeUndefined();
     }
   });
 
   it('does not say the same shelf is empty twice', () => {
-    // The parse reported the eggs and the scan finds them again.
-    const read = readOrder('kela aur anday', [{ query: 'anday' }]);
-    expect(read.filter(match => match.unstocked === 'eggs')).toHaveLength(1);
+    // The parse reported the fish and the scan finds them again.
+    const read = readOrder('kela aur machli', [{ query: 'machli' }]);
+    expect(read.filter(match => match.unstocked === 'fish')).toHaveLength(1);
   });
 });
 
@@ -401,15 +401,15 @@ describe('coverage', () => {
   });
 
   it('keeps an unplaced phrase together rather than as loose words', () => {
-    // "bara wala surf" is one thing somebody asked for. Three unrelated chips
+    // "tarang bara wala" is one thing somebody asked for. Three unrelated chips
     // is not a question anyone can answer.
-    const transcript = 'do kilo tamatar aur bara wala surf';
+    const transcript = 'do kilo tamatar aur tarang bara wala';
     const matches = scanTranscript(transcript);
-    expect(unresolvedFragments(transcript, matches)).toEqual(['bara wala surf']);
+    expect(unresolvedFragments(transcript, matches)).toEqual(['tarang bara wala']);
   });
 
   it('sends a sentence with something left in it to the model', () => {
-    const transcript = 'do kilo tamatar aur bara wala surf';
+    const transcript = 'do kilo tamatar aur tarang bara wala';
     const matches = scanTranscript(transcript);
     // Exactly the case a model is better at than a table of aliases.
     expect(isConfidentlyUnderstood(transcript, matches)).toBe(false);
@@ -432,9 +432,9 @@ describe('coverage', () => {
   });
 
   it('counts a word we understand but do not sell as accounted for', () => {
-    // We heard "anday" perfectly. It is not an unresolved fragment — it is a
+    // We heard "machli" perfectly. It is not an unresolved fragment — it is a
     // shelf we do not stock, which is a different thing to be told.
-    const transcript = 'anday chay aur aik kela';
+    const transcript = 'machli chay aur aik kela';
     const matches = scanTranscript(transcript);
     expect(unresolvedFragments(transcript, matches)).toEqual([]);
   });
