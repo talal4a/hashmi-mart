@@ -551,6 +551,125 @@ export function scanTranscript(transcript: string): CatalogMatch[] {
   });
 }
 
+
+/* -------------------------------------------------------------------------- */
+/* Coverage                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Words that carry no product of their own.
+ *
+ * Everything here is either grammar, a unit, or a quantity — so a sentence made
+ * entirely of these and matched products has been fully understood, and
+ * anything left over is something the customer said that we did not take.
+ *
+ * Numbers and fractions are not listed: they already have tables, and
+ * duplicating them here is how the two drift apart.
+ */
+const FILLER = new Set(
+  [
+    // Deliberately absent: wala/wali. They are how a size or a variant gets
+    // said — "bara wala surf" is one thing somebody asked for — so treating
+    // them as grammar splits a phrase we are supposed to hand back whole.
+    // Urdu and Roman grammar around an order.
+    'aur', 'or', 'ar', 'mujhe', 'mujhay', 'muje', 'mainu', 'menu',
+    'chahiye', 'chahie', 'chaiye', 'chahida', 'de', 'do', 'dedo', 'dena',
+    'dena', 'dedena', 'ka', 'ki', 'ke', 'kay', 'bhi',
+    'please', 'plz', 'and', 'a', 'an', 'the', 'some', 'of', 'me', 'i', 'we',
+    'want', 'need', 'give', 'get', 'bhej', 'bhejo', 'lao', 'la', 'chaida',
+    'اور', 'مجھے', 'چاہیے', 'دے', 'دو', 'دیدو', 'کا', 'کی', 'کے', 'بھی',
+    'لاؤ', 'بھیجو',
+    // Units. A unit without a product is not an item anyone can be sold.
+    'kilo', 'kilos', 'kg', 'kgs', 'gram', 'grams', 'g', 'litre', 'liter',
+    'litres', 'liters', 'l', 'ml', 'packet', 'packets', 'pack', 'bottle',
+    'bottles', 'dabba', 'dibba', 'thaila', 'piece', 'pieces', 'pcs',
+    'کلو', 'گرام', 'لیٹر', 'پیکٹ', 'بوتل', 'ڈبہ', 'تھیلا',
+  ].map(normalise),
+);
+
+/** A word that could be a product: not filler, not a number, long enough. */
+function couldBeProduct(word: string): boolean {
+  if (word.length < 3) return false;
+  if (FILLER.has(word)) return false;
+  if (FOLDED_NUMBERS.has(word) || FOLDED_FRACTIONS.has(word)) return false;
+  if (Number.isFinite(Number(word))) return false;
+  return true;
+}
+
+/**
+ * What the customer said that nothing accounted for.
+ *
+ * The point is §26: never silently lose a word. A sentence that produced two
+ * items and left "tarang bara wala" on the floor has not been understood — it
+ * has been half understood, and the difference between saying so and showing a
+ * confident list of two is the difference between a customer who can fix it and
+ * a customer whose order arrives short.
+ *
+ * Returned as contiguous runs rather than loose words, because "bara wala surf"
+ * is one thing somebody asked for and three unrelated chips is not a question
+ * anyone can answer.
+ */
+export function unresolvedFragments(
+  transcript: string,
+  matches: readonly CatalogMatch[],
+): string[] {
+  const text = normalise(transcript);
+  if (!text) return [];
+
+  // Every word any match consumed, including the aliases behind the product it
+  // resolved to: the transcript says "kela", the match says "Banana Premium",
+  // and neither string contains the other.
+  const consumed = new Set<string>();
+  for (const match of matches) {
+    for (const word of normalise(match.query).split(' ')) consumed.add(word);
+    const entry = [...CATALOG, ...UNSTOCKED].find(
+      candidate => candidate.id === match.productId || candidate.name === match.unstocked,
+    );
+    for (const alias of entry?.aliases ?? []) consumed.add(alias);
+  }
+
+  const runs: string[] = [];
+  let run: string[] = [];
+  const flush = () => {
+    if (run.length) runs.push(run.join(' '));
+    run = [];
+  };
+
+  for (const word of text.split(' ').filter(Boolean)) {
+    if (consumed.has(word) || !couldBeProduct(word)) {
+      flush();
+      continue;
+    }
+    run.push(word);
+  }
+  flush();
+
+  return runs;
+}
+
+/**
+ * Whether the sentence was understood well enough to skip the model.
+ *
+ * This is the free fast path and most orders take it. "Do kilo tamatar aur aik
+ * kela" needs no LLM: the words are in the catalogue, the numbers are in the
+ * tables, and nothing is left over. Calling a model to confirm that costs a
+ * second of the customer's time and one of a small free quota, to agree with
+ * an answer we already had.
+ *
+ * The bar is deliberately high. Anything left unaccounted for, or any match we
+ * are not sure of, goes to the model — that is exactly the case a model is
+ * better at than a table of aliases.
+ */
+export function isConfidentlyUnderstood(
+  transcript: string,
+  matches: readonly CatalogMatch[],
+): boolean {
+  const addable = matches.filter(match => match.productId);
+  if (addable.length === 0) return false;
+  if (addable.some(match => match.confidence !== 'high')) return false;
+  return unresolvedFragments(transcript, matches).length === 0;
+}
+
 /**
  * The model's reading of the order, with the sentence as a floor under it.
  *

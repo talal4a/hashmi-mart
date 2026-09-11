@@ -1,4 +1,11 @@
-import { GroqError, transcribe, completeChat, type ChatTurn } from './groq';
+import {
+  GroqError,
+  transcribe,
+  completeChat,
+  TRANSCRIBE_ACCURATE,
+  TRANSCRIBE_FAST,
+  type ChatTurn,
+} from './groq';
 
 /**
  * Voice Order's two AI steps, kept apart on purpose.
@@ -79,14 +86,75 @@ export type ParsedItem = {
   confidence?: number;
 };
 
-/** Transcribes, with the grocery bias applied. */
+/**
+ * Words that mean the decode produced nothing worth reading.
+ *
+ * Whisper does not return an error for a recording it could not make sense of;
+ * it returns its best guess, and its best guess at background noise is a
+ * pleasantry. These are the ones it reaches for, and treating them as a
+ * transcript is how "we heard: Thank you." ends up on a grocery screen.
+ */
+const NOISE = new Set([
+  'thank you.',
+  'thank you',
+  'thanks for watching!',
+  'thanks for watching',
+  'you',
+  '.',
+  'bye.',
+  'bye',
+  'شکریہ',
+]);
+
+/** Too short to be an order, however fast the customer was talking. */
+const MIN_USEFUL_CHARS = 3;
+
+function looksUnusable(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length < MIN_USEFUL_CHARS) return true;
+  return NOISE.has(trimmed.toLowerCase());
+}
+
+/**
+ * Transcribes, fast first and accurately only if that was not enough.
+ *
+ * Turbo answers in a fraction of the time and gets ordinary grocery speech
+ * right, which is what most orders are. The second pass exists for the ones it
+ * returns nothing usable for — a very short, very fast order, or one spoken
+ * over a shop's background noise — and it runs only then. Always calling both
+ * would double the wait on every order and spend two requests of a small free
+ * quota to improve the few Turbo missed.
+ *
+ * A rate limit on the fast model is not a reason to try the slow one: the limit
+ * is on the account, not the model, and a second request is one more rejection.
+ */
 export async function transcribeVoiceOrder(
   key: string,
   audio: Blob,
   filename: string,
-): Promise<{ text: string }> {
-  const text = await transcribe(key, audio, filename, GROCERY_PROMPT);
-  return { text };
+): Promise<{ text: string; model: string }> {
+  let fast = '';
+  try {
+    fast = await transcribe(key, audio, filename, GROCERY_PROMPT, TRANSCRIBE_FAST);
+  } catch (error) {
+    if (error instanceof GroqError && error.code === 'rate-limited') throw error;
+    // Anything else is worth one more try on the other model.
+  }
+
+  if (fast && !looksUnusable(fast)) return { text: fast, model: TRANSCRIBE_FAST };
+
+  const accurate = await transcribe(
+    key,
+    audio,
+    filename,
+    GROCERY_PROMPT,
+    TRANSCRIBE_ACCURATE,
+  );
+  // Still nothing usable: hand back the empty string rather than the
+  // pleasantry. The app treats empty as silence and asks for the order again,
+  // which is the right thing to do with a recording nobody could read.
+  if (looksUnusable(accurate)) return { text: '', model: TRANSCRIBE_ACCURATE };
+  return { text: accurate, model: TRANSCRIBE_ACCURATE };
 }
 
 /**

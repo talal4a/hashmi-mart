@@ -175,10 +175,29 @@ export default function useVoiceRecorder() {
     }
   }, [recorder, levels]);
 
-  // One synchronous lock covers Send, Cancel and the duration limit.
+  /**
+   * One synchronous lock covering Send, Cancel and the duration limit.
+   *
+   * The important property is that a *finished* recording is never thrown away.
+   * This used to bail out with `null` at two points after `await
+   * recorder.stop()` — once straight after the stop and once after releasing
+   * the audio session — whenever the component had unmounted in the meantime.
+   * Which is the ordinary case for the fastest kind of order: say "olpers do
+   * bread aik", tap Stop, close the sheet. The file was written to disk
+   * perfectly, the URI existed, and this function answered `null` — so the
+   * caller's `if (!result) return` ended the order there. No transcription, no
+   * matching, no error, nothing to retry. The audio was on the phone the whole
+   * time with nothing holding a reference to it.
+   *
+   * Unmounting says the UI is gone. It says nothing about whether the recording
+   * is good. So the mount flag now guards only the things that touch React
+   * state, and the recording is returned either way — the caller decides what
+   * to do with it, and the caller outlives this component.
+   */
   const finish = useCallback(
     async (discard: boolean, keep = false): Promise<Recording | null> => {
-      if (mounted.current && !operationInProgress.current && ready.current) {
+      // Already stopped and held: hand it over without touching the hardware.
+      if (!operationInProgress.current && ready.current) {
         const recording = ready.current;
         ready.current = null;
         if (discard) {
@@ -186,38 +205,63 @@ export default function useVoiceRecorder() {
             new File(recording.uri).delete();
           } catch {}
         }
-        setStatus('idle');
+        if (mounted.current) setStatus('idle');
         return discard ? null : recording;
       }
-      if (
-        !mounted.current ||
-        operationInProgress.current ||
-        !recordingActive.current
-      )
-        return null;
+      if (operationInProgress.current || !recordingActive.current) return null;
       operationInProgress.current = true;
-      setStatus('stopping');
+      if (mounted.current) setStatus('stopping');
       const elapsed = Math.max(0, Date.now() - startedAt.current);
+      /**
+       * Where the file is going, read while the recorder is certainly alive.
+       *
+       * Expo picks the output path at prepare time, so this is already correct
+       * before the stop — and reading it now is what makes the read after the
+       * stop optional. Unmounting releases the native recorder, and touching a
+       * released shared object is its own crash; but losing a finished
+       * recording because a sheet closed is the bug this all exists for. With
+       * the path already in hand, neither has to happen.
+       */
+      let uri: string | null = null;
+      try {
+        uri = recorder.uri;
+      } catch {
+        // Nothing to fall back to yet; the read after the stop is the one that
+        // matters and it is guarded too.
+      }
       try {
         await recorder.stop();
-        if (!mounted.current) return null;
         recordingActive.current = false;
-        const uri = recorder.uri;
+        // Authoritative when it can be read. Only attempted while this
+        // component is still mounted, because after that the recorder may
+        // already be released — and we do not need it.
+        if (mounted.current) {
+          try {
+            uri = recorder.uri ?? uri;
+          } catch {
+            // Released underneath us. The path read above still stands.
+          }
+        }
+        // Deleted only when the customer actually discarded it. Everything
+        // else keeps the file: it is the only copy of what they said.
         if (discard && uri) {
           try {
             new File(uri).delete();
           } catch {}
         }
-        await releaseVoiceSession(session.current);
-        if (!mounted.current) return null;
-        setStatus('idle');
-        if (discard) levels.value = new Array(WAVEFORM_BARS).fill(0);
+        await releaseVoiceSession(session.current).catch(() => {});
+        if (mounted.current) {
+          setStatus('idle');
+          if (discard) levels.value = new Array(WAVEFORM_BARS).fill(0);
+        }
         if (discard) return null;
         if (!uri) throw new Error('Missing recording URI');
         const file = new File(uri);
         if (!file.exists || !file.size) throw new Error('Empty recording');
         const recording = { uri, durationMs: elapsed, mimeType: 'audio/m4a' };
-        if (keep) {
+        // Holding it for a later hand-off only makes sense while there is
+        // still a component to hand it off from.
+        if (keep && mounted.current) {
           ready.current = recording;
           setStatus('ready');
         }

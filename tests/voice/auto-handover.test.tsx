@@ -3,18 +3,17 @@ import VoiceOrderSheet from '../../src/components/voice/VoiceOrderSheet';
 import type { CatalogMatch } from '../../src/services/voiceCatalog';
 
 const mockOrder = {
-  stage: 'review' as string,
+  stage: 'ready' as string,
   transcript: 'مجھے کیلا اور ٹماٹر چاہیے',
   matches: [] as CatalogMatch[],
   addable: [] as CatalogMatch[],
   confidence: 'high' as const,
-  reference: null,
+  unresolved: [] as string[],
   error: null,
-  hasRecording: true,
-  interpret: jest.fn(),
+  accept: jest.fn(),
+  retry: jest.fn(),
+  discard: jest.fn(),
   setQuantity: jest.fn(),
-  sendToStore: jest.fn(),
-  reset: jest.fn(),
   recording: { uri: 'file:///order.m4a', durationMs: 4200, mimeType: 'audio/m4a' },
 };
 
@@ -22,9 +21,8 @@ jest.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-jest.mock('../../src/hooks/useVoiceOrder', () => ({
-  __esModule: true,
-  default: () => mockOrder,
+jest.mock('../../src/state/voiceOrderSession', () => ({
+  useVoiceOrderSession: () => mockOrder,
 }));
 
 jest.mock('../../src/hooks/useVoiceRecorder', () => ({
@@ -60,11 +58,12 @@ const matched = (productId: string, name: string): CatalogMatch => ({
 });
 
 beforeEach(() => {
-  mockOrder.stage = 'review';
+  mockOrder.stage = 'ready';
   mockOrder.transcript = 'مجھے کیلا اور ٹماٹر چاہیے';
   mockOrder.matches = [];
   mockOrder.addable = [];
-  mockOrder.reset.mockClear();
+  mockOrder.unresolved = [];
+  mockOrder.discard.mockClear();
 });
 
 describe('the voice sheet', () => {
@@ -88,7 +87,7 @@ describe('the voice sheet', () => {
     expect(onConfirm).not.toHaveBeenCalled();
     // And no competing offer to have the store call back instead: the items
     // are already on their way, so there is nothing to choose between.
-    expect(view.queryByLabelText('Send voice order to the store')).toBeNull();
+    expect(view.queryByLabelText('Speak again')).toBeNull();
 
     await act(async () => {
       jest.advanceTimersByTime(1000);
@@ -126,7 +125,7 @@ describe('the voice sheet', () => {
     );
     expect(second.getByLabelText('Step 3 of 4')).toBeTruthy();
 
-    mockOrder.stage = 'review';
+    mockOrder.stage = 'ready';
     mockOrder.matches = [matched('banana', 'Banana Premium')];
     mockOrder.addable = mockOrder.matches;
     const third = await render(
@@ -174,12 +173,13 @@ describe('the voice sheet', () => {
     });
 
     expect(onConfirm).not.toHaveBeenCalled();
-    // Saying it again is offered first, because it is the repair that works.
-    expect(view.queryByLabelText('Record your order again')).toBeTruthy();
-    // The recording is still a complete order on its own.
+    // Speaking again is the whole repair now. The old "send this to the store"
+    // ended a voice order on a promise of a phone call, which is not what
+    // anybody asks for by speaking into a grocery app.
+    expect(view.queryByLabelText('Speak again')).toBeTruthy();
     expect(
       view.queryByLabelText('Send voice order to the store'),
-    ).toBeTruthy();
+    ).toBeNull();
   });
 
   it('says the shelf is empty, not that it misheard', async () => {

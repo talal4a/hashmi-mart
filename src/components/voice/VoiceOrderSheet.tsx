@@ -10,11 +10,14 @@ import {
 import type { LayoutRectangle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { FadeInDown, useReducedMotion } from 'react-native-reanimated';
-import { Check, Mic, X } from 'lucide-react-native';
+import { Mic, X } from 'lucide-react-native';
 import PressableScale from '../ui/PressableScale';
 import { grocery } from '../home/groceryTheme';
 import useVoiceRecorder, { formatDuration } from '../../hooks/useVoiceRecorder';
-import useVoiceOrder from '../../hooks/useVoiceOrder';
+import {
+  useVoiceOrderSession,
+  type VoiceOrderSession,
+} from '../../state/voiceOrderSession';
 import AnimatedMic from './AnimatedMic';
 import VoiceWaveform from './VoiceWaveform';
 import {
@@ -89,13 +92,22 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
   const recorder = useVoiceRecorder();
-  const order = useVoiceOrder();
+  // The pipeline lives above the navigator, not in this component. Everything
+  // below can unmount mid-order without touching it.
+  const order = useVoiceOrderSession();
 
-  // Opening the sheet starts listening. Tapping a microphone and then having to
-  // tap another one is a step nobody wants.
+  /**
+   * Opening the sheet starts listening.
+   *
+   * Tapping a microphone and then having to tap another one is a step nobody
+   * wants. Opening also abandons whatever the last attempt produced — that is
+   * an explicit new recording, which is the one thing that legitimately
+   * supersedes an order in flight.
+   */
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
+    order.discard();
     void (async () => {
       const started = await recorder.start();
       if (started && !cancelled) tapRecordStart();
@@ -121,10 +133,24 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
     handover.current = null;
   }, []);
 
+  /**
+   * Puts the sheet away.
+   *
+   * It does not touch the order. Closing a piece of UI is not a decision about
+   * the groceries — and treating it as one is exactly how a recording that was
+   * safely on disk ended up producing nothing: the close handler called
+   * `reset()` on the pipeline, so tapping Stop and then X in the same second
+   * cancelled an order the customer had already finished placing.
+   *
+   * A recording still running is a different matter: there is nothing to keep,
+   * so it is cancelled and the file goes with it.
+   */
   const close = useCallback(() => {
     cancelHandover();
-    void recorder.cancel();
-    order.reset();
+    if (recorder.recording) {
+      void recorder.cancel();
+      order.discard();
+    }
     onClose();
   }, [cancelHandover, recorder, order, onClose]);
 
@@ -137,16 +163,24 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
    */
   const retake = useCallback(async () => {
     cancelHandover();
-    order.reset();
+    order.discard();
     const started = await recorder.start();
     if (started) tapRecordStart();
   }, [cancelHandover, order, recorder]);
 
+  /**
+   * Stop.
+   *
+   * The hand-off happens before the sheet is allowed to go anywhere: the file
+   * is finished, ownership passes to the session above the navigator, and only
+   * then is anything free to unmount. `accept` is synchronous for that reason —
+   * there is no await between handing the recording over and being safe.
+   */
   const finish = useCallback(async () => {
     const result = await recorder.stop();
     if (!result) return;
     tapSend();
-    await order.interpret(result);
+    order.accept(result);
   }, [recorder, order]);
 
   /**
@@ -216,7 +250,7 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
     // Note the order: the sheet's own recorder is released, but the file it
     // wrote is not touched. Checkout plays it back.
     void recorder.cancel();
-    order.reset();
+    order.discard();
     onConfirm(items, { transcript, outOfStock, unclear, recording });
   }, [order, recorder, onConfirm, cancelHandover]);
 
@@ -240,7 +274,7 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
         ? { uri: order.recording.uri, durationMs: order.recording.durationMs }
         : null;
       void recorder.cancel();
-      order.reset();
+      order.discard();
       onConfirm(
         [
           {
@@ -281,7 +315,7 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
    * items and every quantity is still editable.
    */
   useEffect(() => {
-    if (order.stage !== 'review' || order.addable.length === 0) return;
+    if (order.stage !== 'ready' || order.addable.length === 0) return;
     if (handover.current) return;
     handover.current = setTimeout(confirmAll, HANDOVER_DELAY_MS);
   }, [order.stage, order.addable.length, confirmAll]);
@@ -291,34 +325,39 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
     if (!visible) cancelHandover();
   }, [visible, cancelHandover]);
 
-  const sendOriginal = useCallback(() => {
-    tapSend();
-    void order.sendToStore();
-  }, [order]);
-
   const enter = reduced ? undefined : FadeInDown.duration(240);
 
   /**
    * Which of the four nodes is live, and whether it is stuck there.
    *
-   * Derived from the stage rather than tracked, because the stage is already
-   * the truth: a rail with its own state is a rail that disagrees with the
-   * screen it is describing the moment a request fails out of order.
+   * Derived from the session's stage rather than tracked, because the stage is
+   * already the truth: a rail with its own state is a rail that disagrees with
+   * the screen it is describing the moment a request fails out of order.
    */
-  const handing = order.stage === 'review' && order.addable.length > 0;
+  const handing = order.stage === 'ready' && order.addable.length > 0;
+  const stuck = order.stage === 'empty' || order.stage === 'error';
   const step = recorder.recording
     ? 0
-    : order.stage === 'transcribing'
+    : order.stage === 'finalizing' || order.stage === 'transcribing'
       ? 1
-      : order.stage === 'understanding'
-        ? 2
-        : handing
-          ? 3
-          : 2;
-  // Review with nothing to add is the end of the road for the AI path: the rail
-  // stops on Match rather than pretending to advance.
-  const stalled = order.stage === 'review' && order.addable.length === 0;
-  const onRail = order.stage !== 'sending' && order.stage !== 'sent';
+      : handing
+        ? 3
+        : 2;
+
+  const working =
+    order.stage === 'finalizing' ||
+    order.stage === 'transcribing' ||
+    order.stage === 'understanding' ||
+    order.stage === 'matching';
+
+  const workingLabel =
+    order.stage === 'finalizing'
+      ? 'Finishing your recording…'
+      : order.stage === 'transcribing'
+        ? 'Listening to your order…'
+        : order.stage === 'understanding'
+          ? 'Understanding your order…'
+          : 'Finding your groceries…';
 
   return (
     <Modal
@@ -356,7 +395,7 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
               as a stage rather than as a stall — and it stays put between
               stages, so the sheet does not appear to rebuild itself each time
               the wait changes its name. */}
-          {onRail ? <VoiceSteps at={step} failed={stalled} /> : null}
+          <VoiceSteps at={step} failed={stuck} />
 
           {recorder.recording ? (
             <RecordingView
@@ -365,18 +404,8 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
               onCancel={close}
               onDone={finish}
             />
-          ) : order.stage === 'transcribing' || order.stage === 'understanding' ? (
-            <VoicePulse
-              label={
-                order.stage === 'transcribing'
-                  ? 'Listening to your order…'
-                  : 'Understanding your order…'
-              }
-            />
-          ) : order.stage === 'sending' ? (
-            <VoicePulse label="Sending to HashmiMart…" />
-          ) : order.stage === 'sent' ? (
-            <Sent reference={order.reference} onDone={close} />
+          ) : working ? (
+            <VoicePulse label={workingLabel} />
           ) : (
             <Review
               order={order}
@@ -384,7 +413,7 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
               onHandNow={confirmAll}
               onPick={confirmPicked}
               onRetake={retake}
-              onSend={sendOriginal}
+              onRetry={order.retry}
               onSetQuantity={order.setQuantity}
               onMeasureRow={measureRow}
             />
@@ -446,57 +475,24 @@ function RecordingView({
   );
 }
 
-function Sent({
-  reference,
-  onDone,
-}: {
-  reference: string | null;
-  onDone: () => void;
-}) {
-  return (
-    <View style={[s.body, s.working]}>
-      <View style={s.tick}>
-        <Check size={22} color="#FFFFFF" strokeWidth={3} />
-      </View>
-      <Text style={s.title}>Voice order sent</Text>
-      <Text style={s.lead}>
-        HashmiMart has your recording and will call to confirm.
-      </Text>
-      {reference ? (
-        <Text style={s.reference} selectable>
-          Reference {reference}
-        </Text>
-      ) : null}
-      <PressableScale
-        accessibilityRole="button"
-        accessibilityLabel="Done"
-        onPress={onDone}
-        scaleTo={0.95}
-        style={s.primary}
-      >
-        <Text style={s.primaryText}>Done</Text>
-      </PressableScale>
-    </View>
-  );
-}
-
 function Review({
   order,
   handing,
   onHandNow,
   onPick,
   onRetake,
-  onSend,
+  onRetry,
   onSetQuantity,
   onMeasureRow,
 }: {
-  order: ReturnType<typeof useVoiceOrder>;
+  order: VoiceOrderSession;
   /** True while the matched items are counting down to their flight. */
   handing: boolean;
   onHandNow: () => void;
   onPick: (productId: string) => void;
   onRetake: () => void;
-  onSend: () => void;
+  /** Re-sends the audio we already have. Never asks for another recording. */
+  onRetry: () => void;
   onSetQuantity: (index: number, quantity: number) => void;
   onMeasureRow: (productId: string, frame: LayoutRectangle) => void;
 }) {
@@ -555,27 +551,39 @@ function Review({
           />
         ) : (
           <>
-            {/* Saying it again is the repair that actually works, so it is the
-                one that looks like the answer. */}
+            {/* Speaking again is the repair that actually works, so it is the
+                one that looks like the answer.
+
+                There is deliberately no "send this to the store" beside it any
+                more. It ended a voice order on a promise of a phone call,
+                which is not what anybody asks for by speaking into a grocery
+                app — and it was offered for failures the customer could fix in
+                four seconds by saying two words again. */}
             <PressableScale
               accessibilityRole="button"
-              accessibilityLabel="Record your order again"
+              accessibilityLabel="Speak again"
               onPress={onRetake}
               scaleTo={0.96}
               style={s.primary}
             >
               <Mic size={16} color={grocery.white} strokeWidth={2.4} />
-              <Text style={s.primaryText}>Say it again</Text>
+              <Text style={s.primaryText}>Speak again</Text>
             </PressableScale>
-            <PressableScale
-              accessibilityRole="button"
-              accessibilityLabel="Send voice order to the store"
-              onPress={onSend}
-              scaleTo={0.96}
-              style={s.ghostWide}
-            >
-              <Text style={s.ghostText}>Send voice to store instead</Text>
-            </PressableScale>
+            {/* Only when the failure was ours. The recording is still here, so
+                this costs the customer nothing but a moment — asking them to
+                say it all again because our upstream blinked is the rudest
+                thing this screen could do. */}
+            {order.stage === 'error' && order.recording ? (
+              <PressableScale
+                accessibilityRole="button"
+                accessibilityLabel="Try the same recording again"
+                onPress={onRetry}
+                scaleTo={0.96}
+                style={s.ghostWide}
+              >
+                <Text style={s.ghostText}>Try again</Text>
+              </PressableScale>
+            ) : null}
           </>
         )}
       </View>
@@ -600,7 +608,7 @@ function Trouble({
   onPick,
   onMeasure,
 }: {
-  order: ReturnType<typeof useVoiceOrder>;
+  order: VoiceOrderSession;
   onPick: (productId: string) => void;
   onMeasure: (productId: string, frame: LayoutRectangle) => void;
 }) {
@@ -614,7 +622,7 @@ function Trouble({
   ];
 
   let kind: TroubleKind;
-  if (order.error) kind = 'failed';
+  if (order.stage === 'error') kind = 'failed';
   else if (!order.transcript) kind = 'silent';
   // Everything we heard was a real thing we simply do not sell. Telling this
   // customer we did not catch them is the worse of the two mistakes: we caught
@@ -682,7 +690,6 @@ const s = StyleSheet.create({
   // Room for the shadow the rows cast, and for the tilt they take before they
   // fly; a tight container clips both.
   itemsInner: { gap: 9, paddingVertical: 3, paddingHorizontal: 2 },
-  working: { alignItems: 'center', paddingVertical: 26 },
   lead: {
     fontSize: 13.5,
     lineHeight: 19,
@@ -751,15 +758,6 @@ const s = StyleSheet.create({
   },
   ghostText: { fontSize: 14, fontWeight: '700', color: '#2C6B87' },
 
-  tick: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: '#2FB56B',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reference: { fontSize: 12, fontWeight: '700', color: grocery.blue },
   note: {
     fontSize: 11.5,
     lineHeight: 16,

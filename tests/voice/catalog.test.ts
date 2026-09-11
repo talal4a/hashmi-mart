@@ -5,6 +5,8 @@ import {
   readOrder,
   readQuantity,
   scanTranscript,
+  unresolvedFragments,
+  isConfidentlyUnderstood,
   CATALOG,
 } from '../../src/services/voiceCatalog';
 
@@ -377,5 +379,63 @@ describe('items we know and do not sell', () => {
     // The parse reported the eggs and the scan finds them again.
     const read = readOrder('kela aur anday', [{ query: 'anday' }]);
     expect(read.filter(match => match.unstocked === 'eggs')).toHaveLength(1);
+  });
+});
+
+/**
+ * Coverage: what the sentence said that nothing accounted for.
+ *
+ * Two jobs. It decides whether a model needs to be called at all — most orders
+ * are catalogue words and numbers, and asking a model to confirm that costs a
+ * second of the customer's time and one request of a small free quota to agree
+ * with us. And it is what stops a half-understood order being presented as a
+ * confident one: a sentence that produced two items and quietly dropped a third
+ * thing the customer said is how an order arrives short.
+ */
+describe('coverage', () => {
+  it('leaves nothing over when every word is a product, a number or grammar', () => {
+    const transcript = 'mujhe do kilo tamatar aur aik kela chahiye';
+    const matches = scanTranscript(transcript);
+    expect(unresolvedFragments(transcript, matches)).toEqual([]);
+    expect(isConfidentlyUnderstood(transcript, matches)).toBe(true);
+  });
+
+  it('keeps an unplaced phrase together rather than as loose words', () => {
+    // "bara wala surf" is one thing somebody asked for. Three unrelated chips
+    // is not a question anyone can answer.
+    const transcript = 'do kilo tamatar aur bara wala surf';
+    const matches = scanTranscript(transcript);
+    expect(unresolvedFragments(transcript, matches)).toEqual(['bara wala surf']);
+  });
+
+  it('sends a sentence with something left in it to the model', () => {
+    const transcript = 'do kilo tamatar aur bara wala surf';
+    const matches = scanTranscript(transcript);
+    // Exactly the case a model is better at than a table of aliases.
+    expect(isConfidentlyUnderstood(transcript, matches)).toBe(false);
+  });
+
+  it('does not trust a fuzzy hit enough to skip the model', () => {
+    // "spinch" is a near miss, not an alias. A guess is a candidate to ask
+    // about, never a reason to stop checking — and the model is exactly the
+    // thing that might read it better than an edit distance can.
+    const transcript = 'spinch do';
+    const matches = scanTranscript(transcript);
+    const hit = matches.find(match => match.productId === 'spinach');
+    expect(hit?.confidence).toBe('medium');
+    expect(isConfidentlyUnderstood(transcript, matches)).toBe(false);
+  });
+
+  it('never calls an empty order understood', () => {
+    expect(isConfidentlyUnderstood('kuch samajh nahi aaya', [])).toBe(false);
+    expect(isConfidentlyUnderstood('', [])).toBe(false);
+  });
+
+  it('counts a word we understand but do not sell as accounted for', () => {
+    // We heard "anday" perfectly. It is not an unresolved fragment — it is a
+    // shelf we do not stock, which is a different thing to be told.
+    const transcript = 'anday chay aur aik kela';
+    const matches = scanTranscript(transcript);
+    expect(unresolvedFragments(transcript, matches)).toEqual([]);
   });
 });

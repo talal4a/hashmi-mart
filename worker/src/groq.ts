@@ -19,8 +19,18 @@ const TRANSCRIBE_URL = 'https://api.groq.com/openai/v1/audio/transcriptions';
  */
 const CHAT_MODEL = 'llama-3.3-70b-versatile';
 
-/** Whisper large is the one Groq speech model that handles Urdu and Punjabi. */
-const TRANSCRIBE_MODEL = 'whisper-large-v3';
+/**
+ * The two Whisper models on Groq's free plan, in the order they are tried.
+ *
+ * Turbo first because Voice Order has to feel instant — the customer has just
+ * stopped talking and is watching a spinner. Large V3 is the accuracy-first
+ * one and costs noticeably more wall time, so it is a fallback rather than a
+ * default: running both on every order would double the latency and burn two
+ * requests of a small free quota to improve the handful of orders that Turbo
+ * actually got wrong.
+ */
+export const TRANSCRIBE_FAST = 'whisper-large-v3-turbo';
+export const TRANSCRIBE_ACCURATE = 'whisper-large-v3';
 
 export type GroqErrorCode = 'unauthenticated' | 'rate-limited' | 'upstream' | 'timeout';
 
@@ -138,10 +148,11 @@ export async function transcribe(
    * a grocery order.
    */
   prompt?: string,
+  model: string = TRANSCRIBE_FAST,
 ): Promise<string> {
   const form = new FormData();
   form.append('file', audio, filename);
-  form.append('model', TRANSCRIBE_MODEL);
+  form.append('model', model);
   form.append('response_format', 'json');
   if (prompt) form.append('prompt', prompt);
 

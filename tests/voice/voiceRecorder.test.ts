@@ -95,7 +95,16 @@ test('permission resolving after unmount never prepares the released recorder', 
   expect(mockRecorder.prepareToRecordAsync).not.toHaveBeenCalled();
 });
 
-test('stop resolving after unmount never reads the released recorder URI', async () => {
+/**
+ * A stop that lands after the component is gone must not touch native state.
+ *
+ * Unmounting releases the recorder, and reading a released shared object is its
+ * own crash. But the recording must still come back — losing one because a
+ * sheet closed is the bug this file is mostly about. Both hold because the
+ * output path is read while the recorder is certainly alive, before the stop,
+ * so the read afterwards is an upgrade rather than a requirement.
+ */
+test('a stop landing after unmount returns the recording without reading the released recorder', async () => {
   let resolve!: () => void;
   mockRecorder.stop.mockReturnValue(
     new Promise<void>(r => {
@@ -111,10 +120,16 @@ test('stop resolving after unmount never reads the released recorder URI', async
     pending = result.current.stop();
   });
   await unmount();
+
   const uri = jest.spyOn(mockRecorder, 'uri', 'get');
   resolve();
-  expect(await pending).toBeNull();
+
+  expect(await pending).toEqual(
+    expect.objectContaining({ uri: 'file:///tmp/note.m4a' }),
+  );
+  // Captured before the stop, so nothing reached for the released object.
   expect(uri).not.toHaveBeenCalled();
+  uri.mockRestore();
 });
 
 test('only polls while recording and stops polling on unmount', async () => {
@@ -199,4 +214,43 @@ test('already granted access starts without reopening the Android permission act
   });
   expect(AudioModule.requestRecordingPermissionsAsync).not.toHaveBeenCalled();
   expect(mockRecorder.record).toHaveBeenCalledTimes(1);
+});
+
+/**
+ * The bug this whole change exists for.
+ *
+ * Say something short and fast, tap Stop, close the sheet in the same second.
+ * The file is written to disk perfectly — and `stop()` used to answer `null`,
+ * because the component had unmounted while the native stop was in flight. The
+ * caller's `if (!result) return` ended the order right there: no transcription,
+ * no matching, no error, and nothing to retry. The audio sat on the phone with
+ * no one holding a reference to it.
+ *
+ * Unmounting says the UI is gone. It says nothing about whether the recording
+ * is good, and the caller that receives it outlives this component.
+ */
+test('a finished recording survives the component that made it', async () => {
+  const view = await renderHook(() => useVoiceRecorder());
+
+  await act(async () => {
+    await view.result.current.start();
+  });
+
+  const stop = view.result.current.stop;
+
+  // Stop and unmount in the same tick, which is exactly what tapping Stop and
+  // closing the sheet does.
+  let recording: Awaited<ReturnType<typeof stop>> = null;
+  await act(async () => {
+    const pending = stop();
+    view.unmount();
+    recording = await pending;
+  });
+
+  expect(recording).toEqual(
+    expect.objectContaining({ uri: 'file:///tmp/note.m4a' }),
+  );
+  // And the file it points at is still there. Cancelling deletes; finishing
+  // never does.
+  expect(mockDelete).not.toHaveBeenCalled();
 });

@@ -291,8 +291,8 @@ async function handleVoiceTranscribe(request: Request, env: Env): Promise<Respon
       file,
       file.name || 'order.m4a',
     );
-    // An empty transcript is silence. The app offers a re-record or sending the
-    // original; inventing words for it is the one thing this must never do.
+    // An empty transcript is silence. The app asks for the order again;
+    // inventing words for it is the one thing this must never do.
     return json(result, 200);
   } catch (error) {
     return errorResponse(error);
