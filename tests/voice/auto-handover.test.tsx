@@ -107,6 +107,27 @@ describe('the voice sheet', () => {
     });
   });
 
+  it('does not ask for an order before the microphone is open', async () => {
+    // Opening the sheet starts a chain of awaits — permission, audio session,
+    // prepare, record — and nothing is captured during any of it. The sheet
+    // used to render the review branch throughout, which with nothing matched
+    // yet reads "We couldn't hear anything": it announced a failure while the
+    // customer was deciding whether to speak, and then lost the first word of
+    // what they said.
+    mockOrder.stage = 'idle';
+    mockOrder.matches = [];
+    mockOrder.addable = [];
+
+    const view = await render(
+      <VoiceOrderSheet visible onClose={jest.fn()} onConfirm={jest.fn()} />,
+    );
+
+    expect(view.getByText('Getting the microphone ready')).toBeTruthy();
+    // The two things that invite speech, both absent until it is true.
+    expect(view.queryByText("We couldn't hear anything")).toBeNull();
+    expect(view.queryByText('Listening — speak now')).toBeNull();
+  });
+
   it('says which stage it is on, all the way through', async () => {
     // The waits are the whole experience of a voice order and they used to be
     // a spinner with a changing caption — which is the same picture whether

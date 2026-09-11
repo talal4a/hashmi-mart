@@ -344,6 +344,28 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
         ? 3
         : 2;
 
+  /**
+   * The microphone is not live yet.
+   *
+   * Opening the sheet starts a chain of awaits — permission, audio session,
+   * prepare, record — and on a real phone that is several hundred milliseconds
+   * during which nothing is being captured. The sheet used to render the review
+   * branch through all of it, which with nothing matched yet means it displayed
+   * "We couldn't hear anything" *while the customer was deciding to speak*.
+   *
+   * So it invited an order it could not record, and the first word of every
+   * fast one was lost: "mujhe saib chahiye aur kela chahiye" reached Whisper as
+   * "…chahiye aur kela chahiye" and came back as bananas alone. The matcher was
+   * never involved.
+   *
+   * Nothing asks for speech until the microphone is actually open.
+   */
+  const preparing =
+    !recorder.recording &&
+    order.stage === 'idle' &&
+    recorder.status !== 'denied' &&
+    recorder.status !== 'error';
+
   const working =
     order.stage === 'finalizing' ||
     order.stage === 'transcribing' ||
@@ -404,6 +426,8 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
               onCancel={close}
               onDone={finish}
             />
+          ) : preparing ? (
+            <Preparing onCancel={close} />
           ) : working ? (
             <VoicePulse label={workingLabel} />
           ) : (
@@ -430,6 +454,36 @@ export default function VoiceOrderSheet({ visible, onClose, onConfirm }: Props) 
   );
 }
 
+/**
+ * The moment before the microphone opens.
+ *
+ * It says wait, in as many words. Every other thing this screen could show
+ * here — a microphone, a waveform, an empty order — reads as an invitation to
+ * start talking, and talking now is how the first item goes missing.
+ */
+function Preparing({ onCancel }: { onCancel: () => void }) {
+  return (
+    <View style={s.body}>
+      <View style={s.meter}>
+        <AnimatedMic recording={false} size={48} />
+        <View style={s.prepText}>
+          <Text style={s.prepTitle}>Getting the microphone ready</Text>
+          <Text style={s.prepLead}>One moment — wait for the beep.</Text>
+        </View>
+      </View>
+      <PressableScale
+        accessibilityRole="button"
+        accessibilityLabel="Cancel"
+        onPress={onCancel}
+        scaleTo={0.95}
+        style={s.ghostWide}
+      >
+        <Text style={s.ghostText}>Cancel</Text>
+      </PressableScale>
+    </View>
+  );
+}
+
 function RecordingView({
   levels,
   durationMs,
@@ -443,6 +497,7 @@ function RecordingView({
 }) {
   return (
     <View style={s.body}>
+      <Text style={s.listening}>Listening — speak now</Text>
       <Text style={s.lead}>
         Say what you need — Urdu, Punjabi or English.
       </Text>
@@ -697,6 +752,16 @@ const s = StyleSheet.create({
     textAlign: 'center',
   },
   meter: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  prepText: { flex: 1, gap: 3 },
+  prepTitle: { fontSize: 14.5, fontWeight: '800', color: grocery.ink },
+  prepLead: { fontSize: 12.5, lineHeight: 17, color: grocery.muted },
+  listening: {
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+    color: grocery.blue,
+  },
   timer: {
     textAlign: 'center',
     fontSize: 13,
